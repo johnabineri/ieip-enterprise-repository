@@ -1,0 +1,10 @@
+stages:
+  - lint
+  - build
+  - sca          # Grype + ORT: 0 copyleft viral
+  - sbom         # Syft: SPDX 2.3
+  - pii-guard    # blokir kolom email/full_name/nik/phone/address
+  - cross-check  # shared & ref identik dengan CMP
+  - test
+repository: https://github.com/johnabineri/ieip-enterprise-repository.git
+branch_policy: pull-request-only   # D-02: 0 push langsung ke main
