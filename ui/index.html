@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SAORAJA EAP</title>
+  <meta name="description" content="Prototipe UI/UX SAORAJA — Enterprise Architecture Platform (Unified App Shell: EAW, GSE, REQ, CONSOLE, SET), diturunkan dari PRD, SAF, dan SRS V3.0.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/styles.css?v=5">
+</head>
+<body>
+  <a class="sr" href="#main">Lewati ke konten</a>
+  <div class="shell">
+    <header class="hdr">
+      <button class="hdr-btn menu-toggle" id="nav-toggle" aria-label="Lipat atau buka menu samping" aria-expanded="true" onclick="toggleNav()">☰</button>
+      <a class="brand" href="#/eaw/dashboard" aria-label="SAORAJA beranda">
+        <span class="brand-mark">S</span>
+        <span><b>SAORAJA</b><small>Enterprise Architecture Platform</small></span>
+      </a>
+      <nav class="ws-tabs" id="ws-tabs" aria-label="Workspace"></nav>
+      <span class="hdr-sp"></span>
+      <button class="hdr-btn search-btn" onclick="App.openCmdk()" aria-label="Pencarian global">⌕ <span>Cari aplikasi, master, menu…</span><kbd>Ctrl K</kbd></button>
+      <select class="entity-sel" id="entity-sel" aria-label="Konteks entitas" onchange="App.setEntity(this.value)"></select>
+      <button class="hdr-btn" aria-label="Notifikasi" onclick="App.notifMenu()">🔔<span class="dot" id="notif-dot"></span></button>
+      <button class="hdr-btn" aria-label="Profil pengguna" onclick="App.userMenu()" style="padding:0 4px"><span class="avatar" id="avatar">CA</span></button>
+    </header>
+    <aside class="nav" id="nav" aria-label="Navigasi workspace"></aside>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+
+  <!-- Overlays -->
+  <div class="overlay" id="overlay" onclick="App.closeAll()"></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true"></aside>
+  <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+  <div class="pop" id="pop-notif"></div>
+  <div class="pop" id="pop-user"></div>
+
+  <div class="cmdk" id="cmdk" role="dialog" aria-label="Pencarian global">
+    <input id="cmdk-in" placeholder="Cari menu, aplikasi, ADR, atau master SEDDI (party, vendor, coa, product, branch)…" oninput="App.renderCmdk(this.value)" autocomplete="off">
+    <div class="cmdk-list" id="cmdk-list"></div>
+    <div class="cmdk-ft"><span>↑↓ navigasi</span><span>↵ buka</span><span>esc tutup</span><span style="margin-left:auto">feed: GET /api/v1/search/index-feed</span></div>
+  </div>
+
+  <!-- MIND Copilot -->
+  <button class="fab" onclick="App.copilot()" aria-label="Buka MIND Copilot"><span class="spark">✦</span><b>MIND Copilot</b></button>
+  <section class="copilot" id="copilot" aria-label="MIND Architecture Copilot">
+    <div class="cp-hd"><span class="spark" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3DD28A,#0A8F4F);display:grid;place-items:center;color:#0B3D2A">✦</span><div><b>MIND Architecture Copilot</b><div class="tiny" style="opacity:.7">Drift detector · Pre-ARB · NL query</div></div><button class="x" onclick="App.copilot()" aria-label="Tutup">×</button></div>
+    <div class="chat" id="cp-chat"></div>
+    <div class="suggest" style="padding-top:10px">
+      <button onclick="App.copilot('Aplikasi apa saja yang terdampak jika server On-Prem Makassar downtime?')">Dampak downtime DC</button>
+      <button onclick="App.copilot('Tampilkan redundansi aplikasi terbaru')">Redundansi</button>
+      <button onclick="App.copilot('Ada drift atau shadow IT?')">Drift</button>
+      <button onclick="App.copilot('Berapa skor IKA grup?')">Skor IKA</button>
+    </div>
+    <div class="chat-in"><input class="input" id="cp-in" placeholder="Tanya MIND…" onkeydown="if(event.key==='Enter')App.askMind()"><button class="btn pri" onclick="App.askMind()">Kirim</button></div>
+  </section>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <span id="perf" class="sr"></span>
+
+  <script src="assets/config.js"></script>
+  <script src="assets/api.js?v=3"></script>
+  <script src="assets/oidc.js"></script>
+  <script src="assets/data.js"></script>
+  <script src="assets/live.js?v=24"></script><!-- memuat app.js, pages-eaw.js, pages-ops.js (mode live: setelah login + data API) -->
+  <script>
+    /* Sidebar: desktop = lipat/buka (tersimpan); layar sempit = laci. */
+    (function () {
+      var K = 'eap.nav.collapsed', b = document.body;
+      function narrow() { return window.matchMedia('(max-width:860px)').matches; }
+      function sync() { var t = document.getElementById('nav-toggle'); if (t) t.setAttribute('aria-expanded', String(narrow() ? document.getElementById('nav').classList.contains('on') : !b.classList.contains('nav-collapsed'))); }
+      try { if (localStorage.getItem(K) === '1') b.classList.add('nav-collapsed'); } catch (e) { /* tanpa penyimpanan */ }
+      window.toggleNav = function () {
+        if (narrow()) document.getElementById('nav').classList.toggle('on');
+        else { b.classList.toggle('nav-collapsed'); try { localStorage.setItem(K, b.classList.contains('nav-collapsed') ? '1' : '0'); } catch (e) { /* abaikan */ } }
+        sync();
+      };
+      window.addEventListener('resize', sync); document.addEventListener('DOMContentLoaded', sync);
+    })();
+  </script>
+</body>
+</html>

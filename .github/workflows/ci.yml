@@ -1,0 +1,92 @@
+# =============================================================================
+# CI EAP — Gate Konsistensi Data KEIS
+#
+# Menjalankan dua gate yang dituntut oleh dokumen:
+#   1. scripts/cross_check_shared.sh   → PRD EAP NFR-18 · DATABASE-REVIEW ADR-CMP-004
+#   2. scripts/cross_check_consumers.sh→ PRD EAP NFR-17 · DATABASE-REVIEW ADR-CMP-005
+#
+# Kedua gate membandingkan database EAP dengan database CMP, sehingga workflow
+# ini membutuhkan skema CMP (repositori saudara). Bila repositori CMP tidak
+# tersedia, job akan gagal dengan pesan yang jelas (bukan lolos diam-diam).
+# =============================================================================
+name: CI EAP — Gate Konsistensi Data KEIS
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PGHOST: localhost
+  PGPORT: "5432"
+  PGUSER: postgres
+  PGPASSWORD: postgres
+  EAP_DB: kalla_eap
+  CMP_DB: kalla_cmp
+
+jobs:
+  cross-check:
+    name: cross_check_shared + cross_check_consumers
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout EAP
+        uses: actions/checkout@v4
+
+      # Skema CMP adalah sumber kebenaran untuk modul shared dan publikasi CDC.
+      - name: Checkout CMP (repositori saudara)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/cmp
+          path: .cmp
+        continue-on-error: true
+
+      - name: Verifikasi ketersediaan skema CMP
+        run: |
+          if [ ! -d .cmp/database ]; then
+            echo "::error::Repositori CMP tidak ditemukan. Gate ini membandingkan"
+            echo "::error::kalla_eap dengan kalla_cmp — keduanya wajib tersedia."
+            echo "::error::Susunan yang diharapkan: <root>/{eap,cmp}/"
+            exit 1
+          fi
+
+      - name: Terapkan DDL CMP -> kalla_cmp
+        run: |
+          createdb "$CMP_DB"
+          # urutan penting: urutkan nama berkas, 000_init lebih dulu
+          for f in $(ls .cmp/database/*.sql | sort); do
+            echo "==> $f"
+            psql -v ON_ERROR_STOP=1 -q -d "$CMP_DB" -f "$f"
+          done
+
+      - name: Siapkan skema EAP -> kalla_eap
+        run: |
+          createdb "$EAP_DB"
+          # DDL EAP (000-295 + seed 9xx) lalu migrasi; shared/010 identik dengan CMP (dicek Gate 1).
+          for f in $(ls database/*.sql | sort) $(ls migrations/*.sql | sort); do
+            echo "==> $f"
+            psql -v ON_ERROR_STOP=1 -q -d "$EAP_DB" -f "$f"
+          done
+
+      - name: Uji DB EAP (RBAC, katalog, AF-05, ARB/ADR, visibilitas) + pii_guard
+        run: bash tests/run_all.sh
+
+      - name: "Gate 1 — cross_check_shared.sh (NFR-18 / ADR-CMP-004)"
+        run: bash scripts/cross_check_shared.sh
+
+      - name: "Gate 2 — cross_check_consumers.sh (NFR-17 / ADR-CMP-005)"
+        run: bash scripts/cross_check_consumers.sh
