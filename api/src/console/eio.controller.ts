@@ -9,10 +9,19 @@ import { DbService } from '../db/db.service';
 import { planKeys } from '../gse/saga';
 import { GseSagaService } from '../gse/saga.service';
 import {
-  applyMap, callTarget, CallResult, CanonField, EIO_LIMITS, eioEnvName, eioTarget, evalRules, normalizeBody, outbound, renderPath, Rule, validateCanonical,
+  applyMap, callTarget, CallResult, CanonField, EIO_LIMITS, eioEnvName, eioTarget, evalRules, normalizeBody, outbound, renderPath, Rule, unsafeRegexReason, validateCanonical,
 } from './eio';
 
 const KODE = /^[A-Z0-9][A-Z0-9_.-]*$/;
+
+/** Tolak pola regex berisiko ReDoS saat rute disimpan (evalRules tetap memeriksa ulang, fail-closed). */
+function assertSafeRules(rules?: Rule[]) {
+  for (const r of rules ?? []) {
+    if (r?.op !== 'regex' || typeof r.value !== 'string') continue;
+    const why = unsafeRegexReason(r.value);
+    if (why) throw new ProblemException(422, 'unsafe-regex', `rules: ${r.field}: ${why}`);
+  }
+}
 
 class CanonicalDto {
   @Matches(KODE) @MaxLength(50) kode: string;
@@ -152,6 +161,7 @@ export class EioController {
 
   @Post('eio/routes') @HttpCode(201) @RequirePermission('console.eio.write')
   createRoute(@CurrentUser() p: Principal, @Body() b: RouteDto) {
+    assertSafeRules(b.rules);
     return this.db.tx(p, async (c) => {
       const id = (await c.query(`INSERT INTO console.eio_route (kode, nama, deskripsi, canonical_id, target_kind, connector_id, method, path, saga_flow_id, request_map, response_map, rules, entity_id)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,COALESCE($10::jsonb,'{}'),COALESCE($11::jsonb,'{}'),COALESCE($12::jsonb,'[]'),$13) RETURNING id`,
@@ -164,6 +174,7 @@ export class EioController {
   @Patch('eio/routes/:id') @RequirePermission('console.eio.write')
   patchRoute(@CurrentUser() p: Principal, @Param('id') id: string, @Headers('if-match') ifMatch: string, @Body() b: RoutePatchDto, @Res({ passthrough: true }) res: Response) {
     const v = requireIfMatch(ifMatch);
+    assertSafeRules(b.rules);
     return this.db.tx(p, async (c) => {
       const cur = (await c.query('SELECT row_version FROM console.eio_route WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [uuidOr400(id)])).rows[0];
       if (!cur) throw new NotFoundException('rute tidak ditemukan');

@@ -19,7 +19,7 @@ import { ProblemException } from '../common/problem';
  * (+ opsional EIO_SVC_<KODE>_TOKEN = Bearer). EIO_TIMEOUT_MS (default 10000, maks 60000).
  */
 
-export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 10_000, maxRetries: 2, maxTimeoutMs: 60_000 };
+export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 2_000, maxRetries: 2, maxTimeoutMs: 60_000 };
 
 export interface CanonField { name: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array'; required?: boolean; maxLength?: number; enum?: unknown[] }
 export interface Rule { field: string; op: string; value?: unknown; message?: string }
@@ -82,6 +82,52 @@ export function applyMap(map: Record<string, unknown>, src: unknown): Record<str
   return out;
 }
 
+/**
+ * Penjaga ReDoS untuk aturan `regex`: mesin RegExp V8 melakukan backtracking dan berjalan di event loop,
+ * jadi pola berisiko ditolak SEBELUM dikompilasi (saat rute disimpan → 422, dan lagi saat dievaluasi →
+ * fail-closed). Ditolak: backreference (\1, \k<…>), lookaround, dan kuantifier bersarang — grup yang
+ * memuat kuantifier atau alternasi lalu dikuantifikasi lagi, mis. (a+)+, (a|aa)*, (\w*){2,}.
+ * Konservatif: beberapa pola aman ikut tertolak; tulis ulang tanpa grup terkuantifikasi.
+ */
+export function unsafeRegexReason(src: string): string | null {
+  if (src.length > 200) return 'regex maksimum 200 karakter';
+  type G = { quant: boolean; alt: boolean };
+  const stack: G[] = [{ quant: false, alt: false }];
+  const isQuantAt = (i: number) => src[i] === '*' || src[i] === '+' || src[i] === '?' || (src[i] === '{' && /^\{\d+(,\d*)?\}/.test(src.slice(i)));
+  let inClass = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '\\') {
+      const n = src[i + 1] ?? '';
+      if (!inClass && (/[1-9]/.test(n) || n === 'k')) return 'backreference tidak diizinkan';
+      i++; continue;
+    }
+    if (inClass) { if (c === ']') inClass = false; continue; }
+    if (c === '[') { inClass = true; continue; }
+    if (c === '(') {
+      if (/^\(\?<?[=!]/.test(src.slice(i))) return 'lookaround tidak diizinkan';
+      stack.push({ quant: false, alt: false });
+      // lewati penanda grup (?:  atau (?<nama> — tanda '?' di sini bukan kuantifier
+      const m = /^\(\?(?::|<[A-Za-z_$][\w$]*>)/.exec(src.slice(i));
+      if (m) i += m[0].length - 1;
+      continue;
+    }
+    if (c === '|') { stack[stack.length - 1].alt = true; continue; }
+    if (c === ')') {
+      const g = stack.pop();
+      if (!g || !stack.length) return 'kurung tidak seimbang';
+      const parent = stack[stack.length - 1];
+      if (isQuantAt(i + 1)) {
+        if (g.quant || g.alt) return 'kuantifier bersarang tidak diizinkan';
+        parent.quant = true;
+      } else if (g.quant) parent.quant = true;
+      continue;
+    }
+    if (isQuantAt(i)) stack[stack.length - 1].quant = true;
+  }
+  return null;
+}
+
 /** L4: aturan pertama yang dilanggar (atau null). Field kosong hanya dilanggar oleh `required`. */
 export function evalRules(rules: Rule[], data: Record<string, unknown>): { rule: Rule; message: string } | null {
   for (const r of rules ?? []) {
@@ -102,7 +148,8 @@ export function evalRules(rules: Rule[], data: Record<string, unknown>): { rule:
       case 'maxLength': if (!(typeof v === 'string' && v.length <= (r.value as number))) return fail(`maksimum ${r.value} karakter`); break;
       case 'regex': {
         let re: RegExp;
-        try { re = new RegExp(r.value as string); } catch { return fail('pola aturan tidak sah'); }
+        if (typeof r.value !== 'string' || unsafeRegexReason(r.value)) return fail('pola aturan tidak sah');
+        try { re = new RegExp(r.value); } catch { return fail('pola aturan tidak sah'); }
         if (typeof v !== 'string' || v.length > EIO_LIMITS.regexInput || !re.test(v)) return fail('format tidak sesuai');
         break;
       }

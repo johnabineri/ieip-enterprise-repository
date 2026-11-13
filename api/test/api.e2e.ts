@@ -5,7 +5,7 @@ import request from 'supertest';
 import { AppModule, appModuleFor, SERVICE_CONTROLLERS } from '../src/app.module';
 import { findBrowser } from '../src/eaw/pdf';
 import { xsdHashes } from '../src/eaw/xsd';
-import { applyMap, getPath } from '../src/console/eio';
+import { applyMap, evalRules, getPath, unsafeRegexReason } from '../src/console/eio';
 import { ProblemException } from '../src/common/problem';
 import { buildDatabase, db, DB_URL, HS_SECRET, refExec, seedWorld, tokenFor, World } from './helpers';
 
@@ -2673,5 +2673,28 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     expect(() => applyMap({ 'a.constructor.prototype.polluted': { const: 1 } }, {})).toThrow(ProblemException);
     expect(({} as any).polluted).toBeUndefined();
     expect(getPath({ a: 1 }, '__proto__')).toBeUndefined();
+  });
+  it('EIO ReDoS: pola berisiko ditolak saat simpan (422) dan saat evaluasi (fail-closed); pola wajar tetap jalan', async () => {
+    const R = String.raw;
+    for (const bad of ['(a+)+$', '(a|aa)*$', R`(\w*){2,}`, '((ab)*c)+', R`(a)\1`, R`(?<n>a)\k<n>`, 'a(?=b)', '(?<!x)y', '(.*a){12}', '(?:a+)+', '(?<g>a*)*', 'x'.repeat(201)])
+      expect([bad, unsafeRegexReason(bad)]).toEqual([bad, expect.any(String)]);
+    for (const ok of [R`^[A-Z]{2}-\d{4,8}$`, R`^(SO|PO)-\d+$`, R`^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`, '[(+*)]+', R`\(a+\)+`, '^(abc)?x$', '^(?:abc)+$', '^(?<kode>[A-Z]{2})-x$'])
+      expect([ok, unsafeRegexReason(ok)]).toEqual([ok, null]);
+    // evaluasi: pola berisiko tidak pernah dikompilasi — input jahat selesai seketika
+    const t0 = Date.now();
+    expect(evalRules([{ field: 'x', op: 'regex', value: '^(a+)+$' }], { x: 'a'.repeat(40) + '!' })?.message).toMatch(/pola aturan tidak sah/);
+    expect(Date.now() - t0).toBeLessThan(200);
+    expect(evalRules([{ field: 'x', op: 'regex', value: R`^(SO|PO)-\d+$` }], { x: 'SO-12' })).toBeNull();
+    expect(evalRules([{ field: 'x', op: 'regex', value: R`^\d+$` }], { x: '1'.repeat(2001) })?.message).toMatch(/format tidak sesuai/);
+    // API: simpan rute dengan regex berisiko → 422 unsafe-regex, baik POST maupun PATCH
+    const C = (path: string) => `/api/v1/console${path}`;
+    const cm = (await http().post(C('/eio/canonical-models')).set(as('app')).send({ kode: 'E2E-RX', nama: 'Model regex', fields: [{ name: 'kode', type: 'string' }] }).expect(201)).body;
+    const base = { kode: 'E2E-RX-R', nama: 'Rute regex', canonicalId: cm.id, targetKind: 'connector', method: 'POST', path: '/x' };
+    const con = (await http().post(C('/eio/connectors')).set(as('sys')).send({ kode: 'E2E-RX-C', nama: 'Konektor regex', sumber: 'EIO', target: 'RX' }).expect(201)).body;
+    const r422 = await http().post(C('/eio/routes')).set(as('app')).send({ ...base, connectorId: con.id, rules: [{ field: 'kode', op: 'regex', value: '(a+)+' }] }).expect(422);
+    expect(r422.body.type).toMatch(/unsafe-regex/);
+    const rt = (await http().post(C('/eio/routes')).set(as('app')).send({ ...base, connectorId: con.id, rules: [{ field: 'kode', op: 'regex', value: '^[A-Z]+$' }] }).expect(201)).body;
+    const etag = (await http().get(C(`/eio/routes/${rt.id}`)).set(as('app')).expect(200)).headers.etag;
+    await http().patch(C(`/eio/routes/${rt.id}`)).set(as('app')).set('If-Match', etag).send({ rules: [{ field: 'kode', op: 'regex', value: '(x|xx)*' }] }).expect(422);
   });
 });
