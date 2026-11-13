@@ -1,7 +1,10 @@
 # =============================================================================
 # CI EAP — Gate Konsistensi Data KEIS
 #
-# Menjalankan dua gate yang dituntut oleh dokumen:
+# Job `eap` (mandiri): pemeriksa XSS UI, uji DB (tests/run_all.sh), API typecheck,
+# build dan e2e — tidak bergantung pada CMP.
+#
+# Job `cross-check` menjalankan dua gate yang dituntut oleh dokumen:
 #   1. scripts/cross_check_shared.sh   → PRD EAP NFR-18 · DATABASE-REVIEW ADR-CMP-004
 #   2. scripts/cross_check_consumers.sh→ PRD EAP NFR-17 · DATABASE-REVIEW ADR-CMP-005
 #
@@ -26,8 +29,12 @@ env:
   CMP_DB: kalla_cmp
 
 jobs:
-  cross-check:
-    name: cross_check_shared + cross_check_consumers
+  # ---------------------------------------------------------------------------
+  # Job 1 — EAP mandiri: tidak butuh repositori CMP, sehingga regresi EAP selalu
+  # terlihat terpisah dari ketersediaan CMP.
+  # ---------------------------------------------------------------------------
+  eap:
+    name: EAP — uji DB, typecheck, build, e2e API
     runs-on: ubuntu-latest
 
     services:
@@ -50,6 +57,56 @@ jobs:
       # XSS: data tidak boleh disisipkan ke string JS di atribut handler (gunakan window.jsArg) — tanpa dependensi.
       - name: Pemeriksa XSS handler inline UI
         run: python3 scripts/check_ui_handlers.py
+
+      - name: Uji DB EAP (DDL + seed 2× + migrasi + tests/*.test.sql + pii_guard)
+        run: bash tests/run_all.sh
+
+      - name: Siapkan Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"          # sama dengan NODE_VERSION di infra/docker/api.Dockerfile
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: API — install, typecheck, build
+        working-directory: api
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+
+      # e2e: DROP/CREATE kalla_eap_api_test. Uji yang butuh LLM/S3/GitHub sungguhan dilewati otomatis.
+      - name: API — e2e
+        working-directory: api
+        env:
+          # Runner ubuntu-24.04 membatasi user namespace (AppArmor) sehingga sandbox Chrome gagal;
+          # hanya untuk VM CI sekali pakai yang merender fixture uji — JANGAN di produksi.
+          PDF_NO_SANDBOX: "1"
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — gerbang konsistensi EAP ↔ CMP (butuh repositori saudara CMP).
+  # ---------------------------------------------------------------------------
+  cross-check:
+    name: cross_check_shared + cross_check_consumers
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout EAP
+        uses: actions/checkout@v4
 
       # Skema CMP adalah sumber kebenaran untuk modul shared dan publikasi CDC.
       - name: Checkout CMP (repositori saudara)
@@ -85,9 +142,6 @@ jobs:
             echo "==> $f"
             psql -v ON_ERROR_STOP=1 -q -d "$EAP_DB" -f "$f"
           done
-
-      - name: Uji DB EAP (RBAC, katalog, AF-05, ARB/ADR, visibilitas) + pii_guard
-        run: bash tests/run_all.sh
 
       - name: "Gate 1 — cross_check_shared.sh (NFR-18 / ADR-CMP-004)"
         run: bash scripts/cross_check_shared.sh
