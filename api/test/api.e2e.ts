@@ -2676,7 +2676,7 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
   });
   it('EIO ReDoS: pola berisiko ditolak saat simpan (422) dan saat evaluasi (fail-closed); pola wajar tetap jalan', async () => {
     const R = String.raw;
-    for (const bad of ['(a+)+$', '(a|aa)*$', R`(\w*){2,}`, '((ab)*c)+', R`(a)\1`, R`(?<n>a)\k<n>`, 'a(?=b)', '(?<!x)y', '(.*a){12}', '(?:a+)+', '(?<g>a*)*', 'x'.repeat(201)])
+    for (const bad of ['(a+)+$', '(a|aa)*$', R`(\w*){2,}`, '((ab)*c)+', R`(a)\1`, R`(?<n>a)\k<n>`, 'a(?=b)', '(?<!x)y', '(.*a){12}', '(?:a+)+', '(?<g>a*)*', '((a|aa))*', '((a+))+', '(((a|b)c))+', R`\d*\d*\d*\d*x`, 'x'.repeat(201)])
       expect([bad, unsafeRegexReason(bad)]).toEqual([bad, expect.any(String)]);
     for (const ok of [R`^[A-Z]{2}-\d{4,8}$`, R`^(SO|PO)-\d+$`, R`^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`, '[(+*)]+', R`\(a+\)+`, '^(abc)?x$', '^(?:abc)+$', '^(?<kode>[A-Z]{2})-x$'])
       expect([ok, unsafeRegexReason(ok)]).toEqual([ok, null]);
@@ -2685,7 +2685,7 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     expect(evalRules([{ field: 'x', op: 'regex', value: '^(a+)+$' }], { x: 'a'.repeat(40) + '!' })?.message).toMatch(/pola aturan tidak sah/);
     expect(Date.now() - t0).toBeLessThan(200);
     expect(evalRules([{ field: 'x', op: 'regex', value: R`^(SO|PO)-\d+$` }], { x: 'SO-12' })).toBeNull();
-    expect(evalRules([{ field: 'x', op: 'regex', value: R`^\d+$` }], { x: '1'.repeat(2001) })?.message).toMatch(/format tidak sesuai/);
+    expect(evalRules([{ field: 'x', op: 'regex', value: R`^\d+$` }], { x: '1'.repeat(257) })?.message).toMatch(/format tidak sesuai/);
     // API: simpan rute dengan regex berisiko → 422 unsafe-regex, baik POST maupun PATCH
     const C = (path: string) => `/api/v1/console${path}`;
     const cm = (await http().post(C('/eio/canonical-models')).set(as('app')).send({ kode: 'E2E-RX', nama: 'Model regex', fields: [{ name: 'kode', type: 'string' }] }).expect(201)).body;

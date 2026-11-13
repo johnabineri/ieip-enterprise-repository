@@ -19,7 +19,7 @@ import { ProblemException } from '../common/problem';
  * (+ opsional EIO_SVC_<KODE>_TOKEN = Bearer). EIO_TIMEOUT_MS (default 10000, maks 60000).
  */
 
-export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 2_000, maxRetries: 2, maxTimeoutMs: 60_000 };
+export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 256, regexMaxQuantifiers: 3, maxRetries: 2, maxTimeoutMs: 60_000 };
 
 export interface CanonField { name: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array'; required?: boolean; maxLength?: number; enum?: unknown[] }
 export interface Rule { field: string; op: string; value?: unknown; message?: string }
@@ -88,13 +88,16 @@ export function applyMap(map: Record<string, unknown>, src: unknown): Record<str
  * fail-closed). Ditolak: backreference (\1, \k<…>), lookaround, dan kuantifier bersarang — grup yang
  * memuat kuantifier atau alternasi lalu dikuantifikasi lagi, mis. (a+)+, (a|aa)*, (\w*){2,}.
  * Konservatif: beberapa pola aman ikut tertolak; tulis ulang tanpa grup terkuantifikasi.
+ * Kasus polinomial (\d*\d*\d*x) dibatasi lewat maks 3 kuantifier per pola + input ≤ 256 karakter.
+ * BATAS JUJUR: ini heuristik di atas mesin backtracking, bukan jaminan linear — pengganti yang
+ * semestinya adalah mesin linear-time (RE2/RE2JS), belum dipasang karena butuh dependensi baru.
  */
 export function unsafeRegexReason(src: string): string | null {
   if (src.length > 200) return 'regex maksimum 200 karakter';
   type G = { quant: boolean; alt: boolean };
   const stack: G[] = [{ quant: false, alt: false }];
   const isQuantAt = (i: number) => src[i] === '*' || src[i] === '+' || src[i] === '?' || (src[i] === '{' && /^\{\d+(,\d*)?\}/.test(src.slice(i)));
-  let inClass = false;
+  let inClass = false, quantifiers = 0;
   for (let i = 0; i < src.length; i++) {
     const c = src[i];
     if (c === '\\') {
@@ -117,13 +120,17 @@ export function unsafeRegexReason(src: string): string | null {
       const g = stack.pop();
       if (!g || !stack.length) return 'kurung tidak seimbang';
       const parent = stack[stack.length - 1];
-      if (isQuantAt(i + 1)) {
-        if (g.quant || g.alt) return 'kuantifier bersarang tidak diizinkan';
-        parent.quant = true;
-      } else if (g.quant) parent.quant = true;
+      if (isQuantAt(i + 1) && (g.quant || g.alt)) return 'kuantifier bersarang tidak diizinkan';
+      // teruskan ke induk: ((a|aa))* dan ((a+))+ harus tetap tertangkap di tingkat luar
+      parent.alt ||= g.alt;
+      parent.quant ||= g.quant || isQuantAt(i + 1);
       continue;
     }
-    if (isQuantAt(i)) stack[stack.length - 1].quant = true;
+    if (isQuantAt(i)) {
+      stack[stack.length - 1].quant = true;
+      // batasi derajat polinomial backtracking (mis. \d*\d*\d*\d*x); input juga dibatasi EIO_LIMITS.regexInput
+      if (++quantifiers > EIO_LIMITS.regexMaxQuantifiers) return `regex maksimum ${EIO_LIMITS.regexMaxQuantifiers} kuantifier`;
+    }
   }
   return null;
 }
