@@ -170,6 +170,20 @@
     A.appDetail = (k) => {
       appDetail(k); const a = D.APPS.find((x) => x.kode === k); const bd = document.querySelector('#drawer .drawer-bd');
       if (!a || !bd) return;
+      // Laci mock menulis kode KRA tetap (KRA-APL-001) dan riwayat transisi rekaan — ganti dengan data nyata.
+      const kraRow = [...bd.querySelectorAll('.row.small')].find((r) => r.textContent.includes('Tautan KRA'));
+      if (kraRow) { const kr = D.KRA.find((r) => r.id === a.referensiId); kraRow.lastElementChild.textContent = kr ? `${kr.kode} · ${kr.status}` : '—'; }
+      const hist = [...bd.querySelectorAll('h3')].find((h) => h.textContent.startsWith('Riwayat transisi'))?.nextElementSibling;
+      if (hist) {
+        hist.innerHTML = '<div class="muted">memuat riwayat…</div>';
+        const who = new Map(D.USERS.map((u) => [u.sub, u.uname]));
+        const wita = (s) => new Date(s).toLocaleString('id-ID', { timeZone: 'Asia/Makassar', dateStyle: 'medium', timeStyle: 'short' });
+        API.get(`/api/v1/eaw/workflow?objekType=application&objekId=${encodeURIComponent(a.id)}&limit=100`).then((r) => {
+          const rows = (r.data || []).slice().reverse();
+          hist.innerHTML = rows.length ? rows.map((w) => `<div class="row"><span class="mono faint">${esc(wita(w.waktu))}</span><span>${esc(w.status_dari || '—')} → ${esc(w.status_ke)} · ${esc(who.get(w.pelaku) || String(w.pelaku).slice(0, 8))}${w.catatan ? `<br><span class="muted">${esc(w.catatan)}</span>` : ''}</span></div>`).join('')
+            : '<div class="muted">Belum ada transisi (masih Draf).</div>';
+        }).catch(() => { hist.innerHTML = '<div class="muted">Riwayat tidak dapat dibaca (butuh izin eaw.workflow.read).</div>'; });
+      }
       if (a.jenisNode === 'platform') {
         bd.insertAdjacentHTML('beforeend', `<h3 class="mt">Profil platform</h3><dl class="dl mt-s"><dt>Standar UI/UX</dt><dd>${esc(a.uiStandard || '— (wajib sebelum Divalidasi)')}</dd><dt>Tech stack</dt><dd>${esc(a.techStack || '— (wajib sebelum Divalidasi)')}</dd><dt>Workspace</dt><dd>${D.APPS.filter((x) => x.platform === a.kode).map((x) => A.tag(x.kode)).join(' ') || '—'}</dd></dl>`);
       } else {
