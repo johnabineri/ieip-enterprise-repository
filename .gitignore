@@ -1,3 +1,4 @@
 # Biner lokal & cache
 kind.exe
 __pycache__/
+.playwright-mcp/
