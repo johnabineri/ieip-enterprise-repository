@@ -247,14 +247,21 @@ CREATE TABLE shared.outbox (
 CREATE INDEX ix_outbox_pending ON shared.outbox (available_at) WHERE processed_at IS NULL;
 CREATE INDEX ix_outbox_aggregate ON shared.outbox (aggregate_type, aggregate_id);
 
--- Ambil batch peristiwa; kunci sementara agar tidak diproses worker lain.
+-- Ambil batch peristiwa (maks. p_batch); kunci sementara agar tidak diproses worker lain.
+-- Pemilihan baris WAJIB CTE MATERIALIZED (dieksekusi TEPAT SEKALI). Bentuk lama `WHERE o.id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)`
+-- bisa dievaluasi ulang per baris luar (rencana Nested Loop Semi Join); baris yang sudah di-UPDATE statement yang sama lalu dilewati
+-- FOR UPDATE sehingga tiap evaluasi ulang mengambil baris BERIKUTNYA → seluruh antrean terklaim walau p_batch = 1 (terbukti; uji regresi
+-- di cmp/tests/08_outbox.test.sql & eap/tests/19_outbox.test.sql memaksa rencana itu).
 CREATE FUNCTION shared.outbox_claim(p_worker TEXT, p_batch INT DEFAULT 20, p_lock_seconds INT DEFAULT 60)
 RETURNS SETOF shared.outbox LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, shared AS $$
+    WITH picked AS MATERIALIZED (
+        SELECT id FROM shared.outbox
+         WHERE processed_at IS NULL AND available_at <= now() AND (locked_until IS NULL OR locked_until < now())
+         ORDER BY id LIMIT p_batch FOR UPDATE SKIP LOCKED)
     UPDATE shared.outbox o
        SET locked_by = p_worker, locked_until = now() + make_interval(secs => p_lock_seconds), attempts = o.attempts + 1
-     WHERE o.id IN (SELECT id FROM shared.outbox
-                     WHERE processed_at IS NULL AND available_at <= now() AND (locked_until IS NULL OR locked_until < now())
-                     ORDER BY id LIMIT p_batch FOR UPDATE SKIP LOCKED)
+      FROM picked
+     WHERE o.id = picked.id
     RETURNING o.*
 $$;
 CREATE FUNCTION shared.outbox_done(p_id BIGINT, p_error TEXT DEFAULT NULL)

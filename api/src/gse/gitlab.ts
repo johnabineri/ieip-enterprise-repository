@@ -52,14 +52,21 @@ export class Gitlab {
   async createBranch(path: string, branch: string, ref: string) {
     return (await this.call<{ name: string }>('POST', `/projects/${this.pid(path)}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(ref)}`)).data;
   }
-  async commit(path: string, branch: string, message: string, files: Array<{ path: string; content: string }>) {
+  async commit(path: string, branch: string, message: string, files: Array<{ path: string; content: string; update?: boolean }>) {
     return (await this.call<{ id: string; web_url?: string }>('POST', `/projects/${this.pid(path)}/repository/commits`,
-      { branch, commit_message: message, actions: files.map((f) => ({ action: 'create', file_path: f.path, content: f.content })) })).data;
+      { branch, commit_message: message, actions: files.map((f) => ({ action: f.update ? 'update' : 'create', file_path: f.path, content: f.content })) })).data;
+  }
+  /** Commit LANJUTAN (create/update/delete) ke cabang yang sudah ada (GSE-05). GitLab menerapkan semua aksi atomik atau tidak sama sekali. */
+  async commitActions(path: string, branch: string, message: string, changes: Array<{ path: string; action: 'create' | 'update' | 'delete'; content?: string }>) {
+    return (await this.call<{ id: string }>('POST', `/projects/${this.pid(path)}/repository/commits`,
+      { branch, commit_message: message, actions: changes.map((c) => (c.action === 'delete' ? { action: 'delete', file_path: c.path } : { action: c.action, file_path: c.path, content: c.content ?? '' })) })).data;
   }
   async mergeRequest(path: string, source: string, target: string, title: string, description: string) {
     return (await this.call<{ iid: number; web_url: string }>('POST', `/projects/${this.pid(path)}/merge_requests`,
       { source_branch: source, target_branch: target, title, description, remove_source_branch: true })).data;
   }
+  /** Apakah berkas ada di `ref`? (menentukan aksi create vs update pada commit) */
+  async fileExists(path: string, file: string, ref: string) { return (await this.call('GET', `/projects/${this.pid(path)}/repository/files/${encodeURIComponent(file)}?ref=${encodeURIComponent(ref)}`, undefined, [200, 404])).status === 200; }
   async deleteBranch(path: string, branch: string) { await this.call('DELETE', `/projects/${this.pid(path)}/repository/branches/${encodeURIComponent(branch)}`, undefined, [200, 204, 404]); }
   async latestPipeline(path: string, ref: string) {
     const r = (await this.call<Array<{ id: number; status: string; web_url: string; sha: string }>>('GET', `/projects/${this.pid(path)}/pipelines?ref=${encodeURIComponent(ref)}&per_page=1&order_by=id&sort=desc`)).data;

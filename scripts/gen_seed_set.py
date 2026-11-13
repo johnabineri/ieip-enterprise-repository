@@ -37,6 +37,7 @@ PERMS = [  # workspace, modul, aksi, deskripsi
     ("eaw", "workflow", "read", "Membaca riwayat alur tata kelola"),
     ("gov", "arb", "read", "Membaca tiket ARB"),
     ("gov", "arb", "write", "Mengajukan/meninjau tiket ARB"),
+    ("eaw", "roadmap", "write", "Menyusun Master IT Roadmap (fase, deliverable, milestone) - Holding EA Office"),
     ("eaw", "platform", "write", "Membentuk/mengubah platform (profil UI/UX & tech stack) - Enterprise Application Architect"),
     ("eaw", "workspace", "assign", "Menempatkan/memindahkan workspace ke platform; menandai adopsi"),
     ("req", "session", "write", "Menjalankan sesi elisitasi kebutuhan (REQ): percakapan ter-guardrail menjadi User Story + Gherkin"),
@@ -46,6 +47,7 @@ PERMS = [  # workspace, modul, aksi, deskripsi
     ("console", "ai", "admin", "Mengelola register model AI & dataset RAG, faktur penyedia (GOV-02, FIN-01)"),
     ("console", "finops", "read", "Membaca laporan FinOps (metering token, showback, rekonsiliasi)"),
     ("console", "eio", "write", "Mengelola konektor EIO dan menjalankan health/breaking-change check"),
+    ("console", "eio", "run", "Memanggil rute mediasi EIO (data plane: L1-L6, termasuk saga target rute)"),
     ("console", "security", "admin", "Mengoperasikan AI kill-switch dan melihat log guardrail (SEC-01)"),
     ("gse", "project", "read", "Melihat proyek scaffolding, template, dan flow GSE"),
     ("gse", "project", "run", "Menjalankan scaffolding (gerbang AF-06), mengelola template dan flow GSE"),
@@ -96,10 +98,14 @@ for r in ("ROLE_EAP_STEERING_COMMITTEE", "ROLE_EAP_AUDITOR", "ROLE_EAP_ARB_CHAIR
     MAP[r].append("console.finops.read")
 for r in ("ROLE_EAP_INFRA_ARCHITECT", "ROLE_EAP_APP_ARCHITECT", "ROLE_EAP_SYSADMIN"):
     MAP[r].append("console.eio.write")
+# EIO data plane: pemanggil rute mediasi (akun layanan/integrator). Pengelola rute + GSE Developer (menguji saga lewat rute).
+for r in ("ROLE_EAP_INFRA_ARCHITECT", "ROLE_EAP_APP_ARCHITECT", "ROLE_EAP_SYSADMIN", "ROLE_EAP_GSE_DEVELOPER"):
+    MAP[r].append("console.eio.run")
 
 # Penerbitan dokumen arsitektur resmi: Ketua ARB dan Application Architect (EA Office)
 for r in ("ROLE_EAP_ARB_CHAIR", "ROLE_EAP_APP_ARCHITECT"):
     MAP[r].append("eaw.document.approve")
+    MAP[r].append("eaw.roadmap.write")
 
 codes = {f"{w}.{m}.{a}" for w, m, a, _ in PERMS}
 assert all(p in codes for ps in MAP.values() for p in ps), "pemetaan memuat izin yang tidak ada di katalog"

@@ -1,11 +1,13 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
-import { IsIn, IsObject, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
 import { DbService } from '../db/db.service';
+import { importExchange, ImportReport } from './exchange-import';
+import { validateExchangeXsd, XsdResult, XsdUnavailable } from './xsd';
 import { ARCHI_TO_EAW, BINDABLE, Content, DEFAULT_ELEMENT, EAW_TO_ARCHI, ELEMENTS, NODE_H, NODE_W, normalize, RELATIONS, toExchangeXml, toSvg, validate } from './archimate';
 
 const OBJ_TYPES = Object.keys(BINDABLE);
@@ -20,6 +22,17 @@ class PutDiagramDto {
   @IsOptional() @IsUUID() frameworkId?: string;
   @IsObject() content: Record<string, unknown>;
 }
+class ImportXmlDto {
+  @IsUUID() entityId: string;
+  @IsString() @MinLength(10) @MaxLength(2_000_000) xml: string;
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(200) nama?: string;
+  @IsOptional() @IsString() @MaxLength(200) view?: string;
+  @IsOptional() @IsString() @MaxLength(200) filename?: string;
+  @IsOptional() @IsBoolean() dryRun?: boolean;
+  /** 'strict' (bawaan): galat XSD memblokir impor. 'warn': galat XSD dilaporkan sebagai peringatan dan impor tetap boleh di-commit. */
+  @IsOptional() @IsIn(['strict', 'warn']) xsd?: 'strict' | 'warn';
+}
+class Rollback extends Error { constructor(public body: unknown) { super('rollback'); } }
 class ImportDto {
   @IsIn(OBJ_TYPES) objectType: string;
   @IsUUID() objectId: string;
@@ -60,6 +73,62 @@ export class DiagramsController {
   @Get('meta') @RequirePermission('eaw.model.read')
   meta() {
     return { elements: Object.entries(ELEMENTS).map(([type, e]) => ({ type, layer: e.layer, label: e.label })), relations: RELATIONS, bindable: BINDABLE, defaults: DEFAULT_ELEMENT, node: { w: NODE_W, h: NODE_H } };
+  }
+
+  /**
+   * Impor Open Group Exchange XML -> diagram baru (EAW-09). dryRun (default true) memvalidasi + mencoba menyimpan di dalam transaksi yang dibatalkan
+   * (RLS entitas, nama unik) sehingga laporan sama dengan hasil commit; commit membuat diagram dan mencatat eaw.import_log (sha256). Satu view per impor.
+   */
+  @Post('import-xml') @HttpCode(200) @RequirePermission('eaw.model.write')
+  async importXml(@CurrentUser() p: Principal, @Body() b: ImportXmlDto) {
+    const dryRun = b.dryRun !== false; const { report, content } = importExchange(b.xml, { view: b.view });
+    const sha = createHash('sha256').update(b.xml, 'utf8').digest('hex');
+    const nama = (b.nama ?? report.modelName ?? b.filename?.replace(/\.[^.]+$/, '') ?? '').trim();
+    const xsd = await this.checkXsd(b.xml, report.parsed, b.xsd ?? 'strict', report);
+    const out = { ...report, xsd, sha256: sha, nama, dryRun, committed: false, diagramId: null as string | null };
+    // galat struktural ATAU galat XSD (mode strict) memblokir dry-run maupun commit
+    if (!content || report.errors.length) throw new ProblemException(422, 'validation-failed', 'Impor Exchange XML tidak valid', `${report.errors.length} galat`, { report: { ...out, valid: false } });
+    if (nama.length < 2) { report.valid = false; report.errors.push({ message: 'nama diagram wajib (isi "nama" atau beri <name> pada model)' }); throw new ProblemException(422, 'validation-failed', 'Impor Exchange XML tidak valid', '1 galat', { report: { ...out, valid: false } }); }
+    try {
+      return await this.db.tx(p, async (c) => {
+        await c.query('SAVEPOINT xml_sp');
+        let id: string;
+        try { id = (await c.query('INSERT INTO eaw.diagram (entity_id, nama, content) VALUES ($1,$2,$3::jsonb) RETURNING id', [b.entityId, nama, JSON.stringify(content)])).rows[0].id; }
+        catch (e: any) {
+          await c.query('ROLLBACK TO SAVEPOINT xml_sp');
+          const msg = e?.code === '23505' ? `nama diagram "${nama}" sudah dipakai di entitas ini` : e?.code === '42501' ? 'tidak berhak menyusun diagram di entitas ini' : e?.code === '23503' ? 'entitas tidak ditemukan' : null;
+          if (!msg) throw e;
+          out.valid = false; out.errors.push({ message: msg }); throw new Rollback(out);
+        }
+        if (dryRun) throw new Rollback(out);
+        await c.query('INSERT INTO eaw.import_log (jenis, sha256, baris, dibuat, nama_berkas) VALUES ($1,$2,$3,$4,$5)', ['diagram-xml', sha, report.counts.elements + report.counts.relationships, report.counts.nodes + report.counts.edges, b.filename ?? null]);
+        return { ...out, committed: true, diagramId: id };
+      });
+    } catch (e) {
+      if (e instanceof Rollback) { const r = e.body as typeof out; if (r.errors.length) throw new ProblemException(422, 'validation-failed', 'Impor Exchange XML tidak valid', `${r.errors.length} galat`, { report: r }); return r; }
+      throw e;
+    }
+  }
+
+  /**
+   * Validasi XSD ArchiMate 3.1 (DI LUAR transaksi DB). Hanya dijalankan bila dokumen lolos parser aman (tanpa DOCTYPE/entitas).
+   * strict: galat XSD dan validator tidak tersedia = galat yang memblokir (fail-closed). warn: diturunkan menjadi peringatan.
+   */
+  private async checkXsd(xml: string, parsed: boolean, mode: 'strict' | 'warn', report: ImportReport) {
+    if (!parsed) return { checked: false, mode, reason: 'XML tidak lolos parser aman — XSD tidak dijalankan' };
+    let r: XsdResult;
+    try { r = await validateExchangeXsd(xml); }
+    catch (e) {
+      const msg = e instanceof XsdUnavailable ? e.message : 'validator XSD gagal';
+      if (mode === 'strict') { report.valid = false; report.errors.push({ message: `XSD: ${msg} (gunakan xsd="warn" untuk melanjutkan tanpa validasi skema)` }); }
+      else report.warnings.push(`XSD tidak diperiksa: ${msg}.`);
+      return { checked: false, mode, reason: msg };
+    }
+    if (!r.valid) {
+      if (mode === 'strict') { report.valid = false; for (const e of r.errors) report.errors.push({ message: `XSD: ${e.message}`, line: e.line }); }
+      else report.warnings.push(`XSD: ${r.errors.length}${r.truncated ? '+' : ''} galat skema diterima karena xsd="warn" — contoh: ${r.errors.slice(0, 3).map((e) => `${e.line ? `baris ${e.line}: ` : ''}${e.message}`).join(' | ')}`);
+    }
+    return { checked: true, mode, valid: r.valid, schema: r.schema, errorCount: r.errors.length, ...(r.truncated ? { truncated: true } : {}), ...(mode === 'warn' && !r.valid ? { errors: r.errors } : {}) };
   }
 
   @Get() @RequirePermission('eaw.model.read')
@@ -183,7 +252,15 @@ export class DiagramsController {
   async xml(@CurrentUser() p: Principal, @Param('id') id: string, @Res() res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query(`${SEL} WHERE d.id = $1 AND d.deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('diagram tidak ditemukan atau di luar cakupan akses');
-    res.setHeader('Content-Type', 'application/xml; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${slug(r.nama)}.xml"`); res.send(toExchangeXml(r.content, r.nama));
+    const xml = toExchangeXml(r.content, r.nama);
+    // keluaran sendiri WAJIB sah terhadap XSD resmi: bila tidak, itu bug ekspor → 500 (bukan berkas rusak yang diam-diam terunduh)
+    let status = 'valid';
+    try {
+      const v = await validateExchangeXsd(xml);
+      if (!v.valid) throw new ProblemException(500, 'internal', 'Ekspor Exchange XML tidak sah terhadap XSD', v.errors.slice(0, 5).map((e) => `${e.line ? `baris ${e.line}: ` : ''}${e.message}`).join(' | '));
+    } catch (e) { if (e instanceof XsdUnavailable) status = 'not-validated'; else throw e; }
+    res.setHeader('X-ArchiMate-XSD', `${status}; schema="archimate3_Diagram.xsd 3.1"`);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${slug(r.nama)}.xml"`); res.send(xml);
   }
 }
 type DN = { objectType?: string; objectId?: string };

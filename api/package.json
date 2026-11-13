@@ -4,23 +4,30 @@
   "private": true,
   "description": "SAORAJA EAP API (NestJS) — kontrak SRS §6.2",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"const f=require('fs');f.cpSync('src/eaw/xsd','dist/eaw/xsd',{recursive:true});f.cpSync('src/req/policy','dist/req/policy',{recursive:true})\"",
     "start": "node dist/main.js",
     "start:dev": "ts-node src/main.ts",
     "migrate": "ts-node src/db/migrate.ts",
     "typecheck": "tsc --noEmit",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "test:llm-live": "jest --runInBand test/llm-live"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.300.0",
+    "@opentelemetry/instrumentation-express": "^0.72.0",
+    "@opentelemetry/instrumentation-http": "^0.300.0",
+    "@opentelemetry/instrumentation-pg": "^0.77.0",
+    "@opentelemetry/sdk-node": "^0.300.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "jose": "^5.9.6",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "xmllint-wasm": "5.3.0"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
@@ -36,11 +43,20 @@
     "typescript": "^5.7.2"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": ".",
     "testRegex": "test/.*[.]e2e[.]ts$",
-    "transform": { "^.+[.]ts$": "ts-jest" },
+    "transform": {
+      "^.+[.]ts$": "ts-jest"
+    },
     "testEnvironment": "node",
     "testTimeout": 30000
+  },
+  "overrides": {
+    "multer": "^2.5.0"
   }
 }

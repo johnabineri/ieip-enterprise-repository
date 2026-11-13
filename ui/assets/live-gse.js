@@ -1,6 +1,6 @@
 /* =====================================================================
    SAORAJA EAP — GSE (mode live): Proyek Scaffolding, Template, Flow Builder, penampil berkas, status PR/gerbang.
-   Terhubung ke /api/v1/gse/*. Jujur soal batas: scaffolding deterministik (templat {{variabel}}), TANPA AI (prompt hanya disimpan),
+   Terhubung ke /api/v1/gse/*. Jujur soal batas: scaffolding deterministik (templat {{variabel}}) + AI opsional (LLM OpenAI-compatible, usulan berkas divalidasi, wajib reviu),
    TANPA konektor Git/CI (PR tidak dibuat otomatis; lint/build/SCA/SBOM berstatus "dilewati"). Dipasang oleh live.js (LiveGse.install).
    ===================================================================== */
 window.LiveGse = (function () {
@@ -37,7 +37,7 @@ window.LiveGse = (function () {
           { h: 'Aplikasi', v: (r) => A.tag(r.kode) }, { h: 'Template', v: (r) => `<span class="small">${esc((r.templateIds || []).map((i) => tplNames[i] || '?').join(' + ') || '—')}</span>` },
           { h: 'Branch', v: (r) => `<code class="tiny">${esc(r.branch)}</code> <span class="tiny muted">→ ${esc(r.baseBranch)} (via PR)</span>` },
           { h: 'Gerbang', v: (r) => GATES.map((g) => gateChip(r.gates && r.gates[g])).join(' ') }, { h: 'Berkas', num: 1, v: (r) => r.fileCount || '—' },
-          { h: 'Durasi', num: 1, v: (r) => ms(r.durationMs) }, { h: 'Status', v: (r) => stBadge(r.status) }], list.data, { click: (r) => `App.gseProject('${r.id}')` })
+          { h: 'Durasi', num: 1, v: (r) => ms(r.durationMs) }, { h: 'Status', v: (r) => stBadge(r.status) }], list.data, { click: (r) => `App.gseProject(${window.jsArg(r.id)})` })
           : '<div class="empty"><div class="big">∅</div>Belum ada proyek. Pilih aplikasi berstatus minimal Divalidasi lalu jalankan “Scaffold Baru”.</div>', { flush: true });
     } catch (e) { box.innerHTML = errBox(e); }
   }
@@ -61,17 +61,32 @@ window.LiveGse = (function () {
     A.openDrawer(`<div class="drawer-hd"><div><div class="row">${A.tag(r.kode)}${stBadge(r.status)}</div><h2 class="mt-s">${esc(r.branch)}</h2><p class="small muted">${esc(r.repoGit || '—')} · base ${esc(r.baseBranch)} · ${ms(r.durationMs)}</p></div><button class="x" onclick="App.closeAll()">×</button></div>
       <div class="drawer-bd">${r.reason ? `<div class="callout err"><span class="ic">⛔</span><div>${esc(r.reason)}</div></div>` : ''}
         <h3>Gerbang</h3><div class="stack small mt-s">${GATES.map((g) => { const x = r.gates && r.gates[g]; return `<div class="row"><span style="width:26px">${gateChip(x)}</span><b style="width:90px">${g}</b><span class="muted" style="flex:1">${esc(x ? x.detail : '—')}</span></div>`; }).join('')}</div>
-        <h3 class="mt">Berkas (${r.files.length})</h3><div class="stack small mt-s">${r.files.map((f) => `<div class="row"><code class="tiny" style="flex:1">${esc(f.path)}</code><span class="tiny muted">${f.bytes} B</span></div>`).join('') || '<span class="muted">Tidak ada (diblokir).</span>'}</div>
-        ${r.prompt ? `<h3 class="mt">Prompt tambahan</h3><p class="small mt-s">${esc(r.prompt)}</p><div class="tiny muted">Disimpan sebagai prompt-as-code; belum diproses AI (model on-prem belum terhubung, D-04/D-05).</div>` : ''}
+        <h3 class="mt">Berkas (${r.files.length})</h3><div class="stack small mt-s">${r.files.map((f) => `<div class="row"><code class="tiny" style="flex:1">${esc(f.path)}</code>${f.source === 'ai' ? '<span class="badge b-warn" title="Diusulkan model — wajib reviu manusia">AI</span>' : ''}<span class="tiny muted">${f.bytes} B</span></div>`).join('') || '<span class="muted">Tidak ada (diblokir).</span>'}</div>
+        ${r.prompt ? `<h3 class="mt">Prompt tambahan</h3><p class="small mt-s">${esc(r.prompt)}</p><div class="tiny muted">Disimpan sebagai prompt-as-code setelah masking PII (D-14).${r.ai ? '' : ' Tidak diproses AI (scaffold deterministik).'}</div>` : ''}
+        ${r.ai ? `<h3 class="mt">Scaffolding AI</h3>${aiSummary(r)}` : ''}
         <h3 class="mt">Git &amp; CI</h3>${gitBox(r, g)}</div>
-      <div class="drawer-ft">${r.files.length ? `<button class="btn" onclick="App.gseOpenIde('${r.id}')">Lihat berkas</button>${r.status === 'generated' && g.configured && !g.push && A.can('gse.project.run') ? `<button class="btn pri" onclick="App.gsePush('${r.id}')">⇧ Push + buka PR/MR</button>` : ''}${g.push && A.can('gse.project.run') ? `<button class="btn" onclick="App.gseCi('${r.id}')">↻ Cek status CI</button>` : ''}<button class="btn" onclick="App.gseBundle('${r.id}','${esc(r.kode)}')">⇩ Bundel (.tar)</button>` : ''}</div>`);
+      <div class="drawer-ft">${r.files.length ? `<button class="btn" onclick="App.gseOpenIde(${window.jsArg(r.id)})">Lihat berkas</button>${r.status === 'generated' && g.configured && !g.push && A.can('gse.project.run') ? `<button class="btn pri" onclick="App.gsePush(${window.jsArg(r.id)})">⇧ Push + buka PR/MR</button>` : ''}${g.push && A.can('gse.project.run') ? `<button class="btn" onclick="App.gseCi(${window.jsArg(r.id)})">↻ Cek status CI</button>` : ''}<button class="btn" onclick="App.gseBundle(${window.jsArg(r.id)},${window.jsArg(r.kode)})">⇩ Bundel (.tar)</button>` : ''}</div>`);
   }
 
-  const W = { step: 1, app: null, tpls: [], branch: '', prompt: '', apps: [], templates: [] };
+  const W = { step: 1, app: null, tpls: [], branch: '', prompt: '', ai: false, aiStatus: null, apps: [], templates: [] };
+  const aiBox = () => {
+    const st = W.aiStatus;
+    if (!st || !st.configured) return `<div class="callout info"><span class="ic">ℹ</span><div><b>Bantu AI</b> belum tersedia: LLM belum dikonfigurasi di API (<code>LLM_BASE_URL</code>). Scaffold tetap deterministik dari templat.</div></div>`;
+    if (!st.enabled) return `<div class="callout warn"><span class="ic">⛔</span><div><b>Bantu AI</b> dinonaktifkan kill-switch (CONSOLE → Security Center).</div></div>`;
+    return `<label class="small row" style="gap:8px"><input type="checkbox" ${W.ai ? 'checked' : ''} onchange="App.gseSet('ai',this.checked)"> <b>Bantu AI</b> — model <code>${esc(st.model)}</code> menambah berkas BARU berdasarkan prompt (maks. ${st.limits.maxFiles} berkas)</label>
+      <div class="tiny muted mt-s">Prompt dimasking PII &amp; melewati guardrail lokal sebelum dikirim. Keluaran divalidasi (path, rahasia, tabel master lokal) dan gerbang pii-guard; <b>lint/build tetap tidak dijalankan</b> — kode AI wajib direviu manusia lewat PR.${W.ai && W.prompt.trim().length < 15 ? ' <b style="color:var(--err)">Isi prompt min. 15 karakter.</b>' : ''}</div>`;
+  };
+  const aiSummary = (r) => {
+    const ai = r.ai; if (!ai) return '';
+    const acc = ai.accepted || [], rej = ai.rejected || [];
+    return `<div class="callout ${acc.length ? 'warn' : 'info'} mt"><span class="ic">🤖</span><div><b>${acc.length} berkas dihasilkan AI</b> (model ${esc(ai.model)} · ${ai.promptTokens + ai.completionTokens} token${ai.attempts > 1 ? ' · 1× perbaikan format' : ''}) — <b>wajib reviu manusia</b>.
+      ${acc.length ? `<ul class="small" style="margin:4px 0 0;padding-left:18px">${acc.map((f) => `<li><code>${esc(f.path)}</code>${f.alasan ? ' — ' + esc(f.alasan) : ''}</li>`).join('')}</ul>` : ''}
+      ${rej.length ? `<div class="tiny muted mt-s"><b>${rej.length} usulan ditolak validator:</b> ${rej.slice(0, 6).map((x) => `<code>${esc(x.path || '?')}</code> (${esc(x.alasan)})`).join('; ')}${rej.length > 6 ? ' …' : ''}</div>` : ''}</div></div>`;
+  };
   async function wizard() {
     if (!A.can('gse.project.run')) return A.deny('gse.project.run');
-    try { [W.apps, W.templates] = await Promise.all([API.get('/api/v1/gse/apps').then((r) => r.data), loadTpl()]); } catch (e) { return fail(e); }
-    W.step = 1; W.app = null; W.tpls = []; W.branch = ''; W.prompt = ''; renderWizard();
+    try { [W.apps, W.templates, W.aiStatus] = await Promise.all([API.get('/api/v1/gse/apps').then((r) => r.data), loadTpl(), API.get('/api/v1/gse/ai/status').catch(() => null)]); } catch (e) { return fail(e); }
+    W.step = 1; W.app = null; W.tpls = []; W.branch = ''; W.prompt = ''; W.ai = false; renderWizard();
   }
   function defaults(a) {
     const k = (c) => (W.templates.find((t) => t.kode === c) || {}).id; const base = a.workspaceMode === 'FEDERATED_REMOTE' ? 'tpl-remote-spa' : 'tpl-internal-sub';
@@ -82,21 +97,22 @@ window.LiveGse = (function () {
     const steps = ['Pilih Aplikasi (Gate AF-06)', 'Template & Konfigurasi', 'Hasil'];
     let body = '', foot = '';
     if (W.step === 1) {
-      body = `<p class="small muted mb">Hanya aplikasi di katalog EAW berstatus minimal <b>Divalidasi</b> yang dapat di-scaffold (AF-06). Aplikasi Draf dinonaktifkan.</p><div class="list" style="border:1px solid var(--border);border-radius:10px;max-height:340px;overflow:auto">${W.apps.length ? W.apps.map((x) => `<label class="li" style="cursor:${x.eligible ? 'pointer' : 'not-allowed'};opacity:${x.eligible ? 1 : 0.6}"><input type="radio" name="gapp" ${x.eligible ? '' : 'disabled'} ${x.id === W.app ? 'checked' : ''} onchange="App.gseSet('app','${x.id}')"><div class="bd"><div class="t">${esc(x.kode)} · ${esc(x.nama)}</div><div class="d">${esc(x.jenisNode)}${x.platform ? ' di ' + esc(x.platform) : ''} · ${esc(x.workspaceMode)} · ${esc(x.entityCode)}</div></div>${A.badge(x.status)}</label>`).join('') : '<div class="empty">Katalog EAW masih kosong.</div>'}</div>`;
+      body = `<p class="small muted mb">Hanya aplikasi di katalog EAW berstatus minimal <b>Divalidasi</b> yang dapat di-scaffold (AF-06). Aplikasi Draf dinonaktifkan.</p><div class="list" style="border:1px solid var(--border);border-radius:10px;max-height:340px;overflow:auto">${W.apps.length ? W.apps.map((x) => `<label class="li" style="cursor:${x.eligible ? 'pointer' : 'not-allowed'};opacity:${x.eligible ? 1 : 0.6}"><input type="radio" name="gapp" ${x.eligible ? '' : 'disabled'} ${x.id === W.app ? 'checked' : ''} onchange="App.gseSet('app',${window.jsArg(x.id)})"><div class="bd"><div class="t">${esc(x.kode)} · ${esc(x.nama)}</div><div class="d">${esc(x.jenisNode)}${x.platform ? ' di ' + esc(x.platform) : ''} · ${esc(x.workspaceMode)} · ${esc(x.entityCode)}</div></div>${A.badge(x.status)}</label>`).join('') : '<div class="empty">Katalog EAW masih kosong.</div>'}</div>`;
       foot = `<button class="btn pri" ${W.app ? '' : 'disabled'} onclick="App.gseSet('step',2)">Lanjut →</button>`;
     } else if (W.step === 2) {
       const cats = ['shell', 'frontend', 'backend', 'ddl', 'ci'];
       body = `<div class="callout ok mb"><span class="ic">✓</span>Gate AF-06 lolos — <b>${esc(a.kode)}</b> berstatus ${esc(a.status)}.</div>
-        ${cats.map((c) => { const ts = W.templates.filter((t) => t.kategori === c); return ts.length ? `<div class="field"><label style="text-transform:capitalize">${c}</label>${ts.map((t) => `<label class="small row" style="gap:6px"><input type="checkbox" ${W.tpls.includes(t.id) ? 'checked' : ''} onchange="App.gseTpl('${t.id}',this.checked)"> <b>${esc(t.nama)}</b> <span class="tiny muted">v${esc(t.versi)} · ${t.fileCount} berkas</span></label>`).join('')}</div>` : ''; }).join('')}
+        ${cats.map((c) => { const ts = W.templates.filter((t) => t.kategori === c); return ts.length ? `<div class="field"><label style="text-transform:capitalize">${c}</label>${ts.map((t) => `<label class="small row" style="gap:6px"><input type="checkbox" ${W.tpls.includes(t.id) ? 'checked' : ''} onchange="App.gseTpl(${window.jsArg(t.id)},this.checked)"> <b>${esc(t.nama)}</b> <span class="tiny muted">v${esc(t.versi)} · ${t.fileCount} berkas</span></label>`).join('')}</div>` : ''; }).join('')}
         <div class="form-grid mt"><div class="field full"><label>Feature branch (bukan main — D-02)</label><input class="input mono" value="${esc(W.branch || 'feat/gse-' + a.kode.toLowerCase() + '-scaffold')}" onchange="App.gseSet('branch',this.value)"></div>
-        <div class="field full"><label>Prompt tambahan (opsional)</label><textarea class="textarea" onchange="App.gseSet('prompt',this.value)" placeholder="mis. Tambahkan modul laporan bulanan…">${esc(W.prompt)}</textarea><span class="hint">Disimpan sebagai prompt-as-code; AI scaffolding belum terhubung — hasil murni dari template deterministik.</span></div></div><div id="gse-err" class="mt"></div>`;
+        <div class="field full"><label>Prompt tambahan (opsional)</label><textarea class="textarea" onchange="App.gseSet('prompt',this.value)" placeholder="mis. Tambahkan modul laporan bulanan…">${esc(W.prompt)}</textarea><span class="hint">Disimpan sebagai prompt-as-code setelah <b>masking PII</b> (D-14).</span></div>
+        <div class="field full">${aiBox()}</div></div><div id="gse-err" class="mt"></div>`;
       foot = `<button class="btn" onclick="App.gseSet('step',1)">← Kembali</button><button class="btn gold" ${W.tpls.length ? '' : 'disabled'} onclick="App.gseRun()">⚙ Generate</button>`;
     } else {
       const r = W.result;
       body = r.error ? `<div class="callout err"><span class="ic">✕</span><div>${esc(r.error)}</div></div>` : `<div class="grid g3 mb">${A.kpi('Status', r.status === 'generated' ? 'Dihasilkan' : 'Gerbang gagal')}${A.kpi('Berkas', r.fileCount)}${A.kpi('Durasi', ms(r.durationMs))}</div>
         <div class="stack small">${GATES.map((g) => { const x = r.gates[g]; return `<div class="row"><span style="width:26px">${gateChip(x)}</span><b style="width:90px">${g}</b><span class="muted" style="flex:1">${esc(x.detail)}</span></div>`; }).join('')}</div>
-        <div class="callout info mt"><span class="ic">ℹ</span>Branch <code>${esc(r.branch)}</code> belum di-push (konektor Git belum ada). Unduh bundel lalu commit & buka PR.</div>`;
-      foot = `<button class="btn" onclick="App.closeAll()">Tutup</button>${r.error ? '' : `<button class="btn pri" onclick="App.gseBundle('${r.id}','${esc(r.kode)}')">⇩ Unduh bundel</button>`}`;
+        ${aiSummary(r)}<div class="callout info mt"><span class="ic">ℹ</span>Branch <code>${esc(r.branch)}</code> belum di-push. Push ke Git dari detail proyek (bila konektor aktif) atau unduh bundel lalu commit &amp; buka PR.</div>`;
+      foot = `<button class="btn" onclick="App.closeAll()">Tutup</button>${r.error ? '' : `<button class="btn pri" onclick="App.gseBundle(${window.jsArg(r.id)},${window.jsArg(r.kode)})">⇩ Unduh bundel</button>`}`;
     }
     A.openModal(`<div class="drawer-hd"><div><h2>Scaffold Baru — GSE Engine</h2><p class="small muted">Template deterministik (D-04) · gerbang AF-06</p></div><button class="x" onclick="App.closeAll()">×</button></div>
       <div class="drawer-bd"><div class="steps">${steps.map((s, i) => `<div class="step ${i + 1 < W.step ? 'done' : i + 1 === W.step ? 'on' : ''}"><b>Langkah ${i + 1}</b>${s}</div>`).join('')}</div>${body}</div><div class="drawer-ft">${foot}</div>`);
@@ -104,7 +120,7 @@ window.LiveGse = (function () {
   async function run() {
     const a = W.apps.find((x) => x.id === W.app);
     try {
-      W.result = await API.post('/api/v1/gse/projects', { applicationId: W.app, templateIds: W.tpls, branch: W.branch || undefined, prompt: W.prompt || undefined });
+      W.result = await API.post('/api/v1/gse/projects', { applicationId: W.app, templateIds: W.tpls, branch: W.branch || undefined, prompt: W.prompt || undefined, aiAssist: W.ai || undefined });
     } catch (e) { if (e.status === 422 && !/AF-06/.test(e.detail || '')) { inErr('gse-err', e); return; } W.result = { error: API.explain(e) }; }
     W.step = 3; renderWizard(); A.route();
   }
@@ -115,7 +131,7 @@ window.LiveGse = (function () {
     try {
       const ts = await loadTpl();
       box.innerHTML = `<div class="grid g3">${ts.map((t) => A.card(esc(t.nama), `<p class="small">${esc(t.deskripsi || '')}</p><div class="mt-s small"><code>${esc(t.stack || '')}</code></div><div class="row mt"><span class="tag">${esc(t.kode)}</span><span class="tag">v${esc(t.versi)}</span><span class="right tiny muted">${t.fileCount} berkas</span></div>`,
-        { acts: `<button class="btn sm" onclick="App.gseTemplate('${t.id}')">Buka</button>` })).join('')}</div>`;
+        { acts: `<button class="btn sm" onclick="App.gseTemplate(${window.jsArg(t.id)})">Buka</button>` })).join('')}</div>`;
     } catch (e) { box.innerHTML = errBox(e); }
   }
   async function template(id) {
@@ -124,7 +140,7 @@ window.LiveGse = (function () {
     A.openDrawer(`<div class="drawer-hd"><div><div class="row"><span class="tag">${esc(t.kode)}</span><span class="tag">v${esc(t.versi)}</span></div><h2 class="mt-s">${esc(t.nama)}</h2><p class="small muted">${esc(t.stack || '')}</p></div><button class="x" onclick="App.closeAll()">×</button></div>
       <div class="drawer-bd"><p class="small">${esc(t.deskripsi || '')}</p><h3 class="mt">Berkas templat (${t.files.length})</h3><div class="small mt-s">Variabel: <code>{{app_kode}}</code> <code>{{app_kode_lower}}</code> <code>{{app_nama}}</code> <code>{{platform}}</code> <code>{{workspace_mode}}</code> <code>{{federation_scope}}</code> <code>{{iam_schema}}</code> <code>{{repo_git}}</code></div>
         <div class="stack mt-s">${t.files.map((f, i) => `<div><a href="#" onclick="App.gseTplFile(${i});return false"><code class="tiny">${esc(f.path)}</code></a></div>`).join('')}</div><pre class="code mt" id="gse-tplview">${esc(first ? first.content : '')}</pre></div>
-      <div class="drawer-ft">${A.can('gse.project.run') ? `<button class="btn danger" onclick="App.gseTplDel('${t.id}')">Hapus</button>` : ''}</div>`);
+      <div class="drawer-ft">${A.can('gse.project.run') ? `<button class="btn danger" onclick="App.gseTplDel(${window.jsArg(t.id)})">Hapus</button>` : ''}</div>`);
   }
   function tplForm() {
     A.openModal(`<div class="drawer-hd"><h2>Template Baru</h2><button class="x" onclick="App.closeAll()">×</button></div><form class="drawer-bd" id="tpl-form" onsubmit="App.gseTplSave(event)"><div class="form-grid">
@@ -157,11 +173,47 @@ window.LiveGse = (function () {
       : `<div class="form-grid"><div class="field"><label>Otonomi (maks. L3 — D-06)</label><select class="select" ${can ? '' : 'disabled'} onchange="App.gseAgent('autonomy',this.value)">${['L1', 'L2', 'L3', 'L4'].map((l) => `<option ${l === d.spec.autonomy ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="field"><label>Guardrail fail_mode (wajib closed — D-03)</label><select class="select" ${can ? '' : 'disabled'} onchange="App.gseAgent('fail_mode',this.value)">${['closed', 'open'].map((l) => `<option ${l === d.spec.guardrails.fail_mode ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="field full"><label>Tools (pisahkan koma)</label>${inp((d.spec.tools || []).join(', '), "App.gseAgent('tools',this.value)")}</div></div>`;
-    box.innerHTML = `<div class="grid g-1-2"><div>${A.card('Flow tersimpan', `<div class="list">${F.flows.map((f) => `<div class="li" style="cursor:pointer;${f.id === d.id ? 'background:var(--accent-soft)' : ''}" onclick="App.gseFlowOpen('${f.id}')"><span class="ic">${f.kind === 'saga' ? '⇆' : '✦'}</span><div class="bd"><div class="t">${esc(f.nama)}</div><div class="d">${f.kind} · ${f.valid ? 'valid' : 'tidak valid'}</div></div>${A.pill(f.status, f.status === 'committed' ? 'b-ok' : '')}</div>`).join('') || '<div class="empty small">Belum ada flow.</div>'}</div>`, { flush: true, acts: can ? '<button class="btn sm" onclick="App.gseFlowNew(\'saga\')">+ Saga</button> <button class="btn sm" onclick="App.gseFlowNew(\'agent\')">+ Agent</button>' : '' })}</div>
+    box.innerHTML = `<div class="grid g-1-2"><div>${A.card('Flow tersimpan', `<div class="list">${F.flows.map((f) => `<div class="li" style="cursor:pointer;${f.id === d.id ? 'background:var(--accent-soft)' : ''}" onclick="App.gseFlowOpen(${window.jsArg(f.id)})"><span class="ic">${f.kind === 'saga' ? '⇆' : '✦'}</span><div class="bd"><div class="t">${esc(f.nama)}</div><div class="d">${f.kind} · ${f.valid ? 'valid' : 'tidak valid'}</div></div>${A.pill(f.status, f.status === 'committed' ? 'b-ok' : '')}</div>`).join('') || '<div class="empty small">Belum ada flow.</div>'}</div>`, { flush: true, acts: can ? '<button class="btn sm" onclick="App.gseFlowNew(\'saga\')">+ Saga</button> <button class="btn sm" onclick="App.gseFlowNew(\'agent\')">+ Agent</button>' : '' })}</div>
       <div>${A.card(d.id ? esc(d.nama) : 'Flow baru (' + d.kind + ')', `<div class="field"><label>Nama</label>${inp(d.nama, "App.gseFlowName(this.value)")}</div><div class="mt">${editor}</div>
         ${d.problems && d.problems.length ? `<div class="callout err mt"><span class="ic">✕</span><div><b>Tidak valid:</b><br>${d.problems.map((p) => esc(p)).join('<br>')}</div></div>` : d.id ? '<div class="callout ok mt"><span class="ic">✓</span>Lolos validasi (kompensasi idempoten / batas otonomi).</div>' : '<div class="tiny muted mt">Validasi dilakukan server saat disimpan.</div>'}
         ${yaml ? `<h3 class="mt">${d.kind === 'saga' ? 'flow.yaml' : 'agent.yaml'}</h3><pre class="code mt-s">${esc(yaml)}</pre>` : ''}`, { acts: can ? `<button class="btn sm" onclick="App.gseFlowSave()">Simpan draf</button>${d.id ? `<button class="btn sm pri" onclick="App.gseFlowCommit()">Commit</button><button class="btn sm danger" onclick="App.gseFlowRemove()">Hapus</button>` : ''}` : '' })}</div></div>`;
+      if (d.id && d.kind === 'saga') { box.insertAdjacentHTML('beforeend', '<div id="saga-box" class="mt"></div>'); await sagaBox(d); }
   }
+  /* ---- eksekusi saga (GSE-03, eksekutor ringan di API) ---- */
+  const SR = { flow: null, run: null, input: null, mode: 'simulate', failAt: '', failComp: '' };
+  const RST = { running: ['Berjalan', 'b-info'], completed: ['Selesai', 'b-ok'], compensating: ['Mengompensasi', 'b-warn'], compensated: ['Dikompensasi', 'b-warn'], failed: ['Gagal — tindakan manual', 'b-err'] };
+  const runPill = (st) => A.pill((RST[st] || [st])[0], (RST[st] || ['', ''])[1]);
+  const varsOf = (spec) => [...new Set((spec.steps || []).flatMap((x) => [...String(x.idempotencyKey || '').matchAll(/\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g)].map((m) => m[1])))];
+  async function sagaBox(d) {
+    const el = document.getElementById('saga-box'); if (!el) return;
+    if (SR.flow !== d.id) { SR.flow = d.id; SR.run = null; SR.failAt = ''; SR.failComp = ''; SR.input = JSON.stringify(Object.fromEntries(varsOf(d.spec).map((v) => [v, ''])), null, 2); }
+    let runs = []; try { runs = (await API.get(`/api/v1/gse/flows/${d.id}/runs?limit=20`)).data; } catch (e) { el.innerHTML = errBox(e); return; }
+    let det = null; if (SR.run) { try { det = await API.get(`/api/v1/gse/saga-runs/${SR.run}`); } catch (e) { SR.run = null; } }
+    const can = A.can('gse.project.run') && d.status === 'committed';
+    const names = (d.spec.steps || []).map((x) => x.name);
+    const opt = (v, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(v || '— tidak ada —')}</option>`;
+    const form = can ? `<div class="form-grid"><div class="field full"><label>Input (JSON objek; tanpa PII — D-14)</label><textarea class="input" rows="4" style="font-family:var(--mono,monospace)" onchange="App.gseSagaSet('input',this.value)">${esc(SR.input)}</textarea></div>
+        <div class="field"><label>Mode</label><select class="select" onchange="App.gseSagaSet('mode',this.value)">${['simulate', 'live'].map((m) => `<option ${m === SR.mode ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+        ${SR.mode === 'simulate' ? `<div class="field"><label>Paksa aksi gagal</label><select class="select" onchange="App.gseSagaSet('failAt',this.value)">${['', ...names].map((n) => opt(n, SR.failAt)).join('')}</select></div>
+        <div class="field"><label>Paksa kompensasi gagal</label><select class="select" onchange="App.gseSagaSet('failComp',this.value)">${['', ...names].map((n) => opt(n, SR.failComp)).join('')}</select></div>` : '<div class="field full tiny muted">Mode live memanggil layanan lewat HTTP (alamat dari env API <code>SAGA_SVC_&lt;KODE&gt;</code>); belum dikonfigurasi → ditolak 503. Kill-switch <code>gse-saga</code> di CONSOLE.</div>'}</div>
+        <div id="saga-err"></div>`
+      : `<div class="tiny muted">${d.status !== 'committed' ? 'Commit flow terlebih dahulu untuk menjalankannya.' : 'Menjalankan saga butuh izin <code>gse.project.run</code>.'}</div>`;
+    const list = runs.length ? `<table class="tbl mt"><thead><tr><th>Mulai</th><th>Mode</th><th>Status</th><th>Langkah gagal</th></tr></thead><tbody>${runs.map((r) => `<tr style="cursor:pointer;${r.id === SR.run ? 'background:var(--accent-soft)' : ''}" onclick="App.gseSagaOpen(${window.jsArg(r.id)})"><td class="tiny">${esc(new Date(r.startedAt).toLocaleString('id-ID'))}</td><td>${esc(r.mode)}</td><td>${runPill(r.status)}</td><td>${esc(r.failedStep || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty small mt">Belum pernah dijalankan.</div>';
+    const steps = det ? `<h3 class="mt">Jejak run ${runPill(det.status)}</h3>${det.error ? `<div class="callout ${det.status === 'failed' ? 'err' : 'warn'} mt-s"><span class="ic">!</span><div>${esc(det.error)}</div></div>` : ''}
+      <table class="tbl mt-s"><thead><tr><th>#</th><th>Fase</th><th>Aksi</th><th>Layanan</th><th>Percobaan</th><th>Hasil</th><th>Kunci idempoten</th></tr></thead><tbody>${det.steps.map((x) => `<tr><td>${x.seq + 1}</td><td>${x.phase === 'action' ? 'aksi' : '↩ kompensasi'}</td><td><code>${esc(x.action)}</code></td><td>${esc(x.service)}</td><td>${x.attempt}</td><td>${x.status === 'ok' ? A.pill('ok', 'b-ok') : A.pill('gagal', 'b-err')}${x.httpStatus ? ` <span class="tiny muted">HTTP ${x.httpStatus}</span>` : ''}${x.detail && x.detail.error ? `<div class="tiny muted">${esc(x.detail.error)}</div>` : ''}</td><td class="tiny"><code>${esc(x.idempotencyKey || '—')}</code></td></tr>`).join('')}</tbody></table>
+      ${['running', 'compensating'].includes(det.status) && A.can('gse.project.run') ? `<button class="btn sm mt-s" onclick="App.gseSagaRecover()">Pulihkan (kompensasi)</button> <span class="tiny muted">hanya setelah lease ${esc(new Date(det.leaseUntil).toLocaleTimeString('id-ID'))} kedaluwarsa</span>` : ''}` : '';
+    el.innerHTML = A.card('Eksekusi saga', `<p class="small muted">Eksekutor ringan di API (bukan Temporal): langkah berurutan, retry dengan Idempotency-Key yang sama, kegagalan → kompensasi terbalik atas langkah pemutasi yang sudah sukses. Jejak tersimpan append-only.</p>${form}${list}${steps}`,
+      { acts: can ? '<button class="btn sm pri" onclick="App.gseSagaRun()">▶ Jalankan</button>' : '' });
+  }
+  async function sagaRun() {
+    let input; try { input = SR.input && SR.input.trim() ? JSON.parse(SR.input) : {}; } catch (e) { inErr('saga-err', { message: 'Input bukan JSON yang sah' }); return; }
+    const body = { input, mode: SR.mode, ...(SR.mode === 'simulate' && SR.failAt ? { failAt: SR.failAt } : {}), ...(SR.mode === 'simulate' && SR.failComp ? { failCompensation: SR.failComp } : {}) };
+    try {
+      const r = await API.post(`/api/v1/gse/flows/${SR.flow}/runs`, body); SR.run = r.id;
+      A.toast(`Saga ${(RST[r.status] || [r.status])[0].toLowerCase()}`, esc(r.flowNama), r.status === 'completed' ? 'success' : 'info'); A.route();
+    } catch (e) { inErr('saga-err', e); }
+  }
+
   async function flowSave() {
     const d = F.draft;
     if (d.kind === 'agent') d.spec.tools = (d.spec.tools || []).filter(Boolean);
@@ -178,7 +230,7 @@ window.LiveGse = (function () {
     A.PAGES['gse/template'] = page('Template & Blueprint Generator', 'Blueprint kode deterministik berversi (gse.template) dengan variabel {{...}} dari katalog EAW.', A.lockBtn('gse.project.run', '+ Template', 'App.gseTplForm()', 'btn pri'), templatePage);
     A.PAGES['gse/flow'] = page('Visual Agent & Distributed Saga Flow Builder', 'Saga: tiap langkah pemutasi wajib kompensasi idempoten + idempotencyKey (D-07). Agent: otonomi maksimum L3 dan guardrail fail-closed (D-06, D-03). Divalidasi server.', '', flowPage);
     A.PAGES['gse/ide'] = page('Penampil Berkas Hasil Scaffold', 'Pratinjau read-only berkas proyek (editor Monaco & commit ke Git belum tersedia — GSE-05 belum dibangun).', '', idePage);
-    A.PAGES['gse/pr'] = page('Status Gerbang & PR', 'Hasil gerbang per proyek. Pembuatan PR otomatis & sinkron ArgoCD butuh konektor Git/CI (belum ada): unduh bundel lalu buka PR dari feature branch.', '', prPage);
+    A.PAGES['gse/pr'] = page('Status Gerbang & PR', 'Hasil gerbang per proyek. Push ke feature branch + PR/MR dan status CI lewat konektor Git (GitHub/GitLab) bila dikonfigurasi; tanpa konektor: unduh bundel lalu buka PR manual. Sinkron ArgoCD belum tersedia.', '', prPage);
     A.gseWizard = wizard; A.gseSet = (k, v) => { W[k] = v; if (k === 'app') W.tpls = defaults(W.apps.find((x) => x.id === v)); if (k === 'step' && v === 2 && !W.tpls.length) W.tpls = defaults(W.apps.find((x) => x.id === W.app)); renderWizard(); };
     A.gseTpl = (id, on) => { W.tpls = on ? [...new Set([...W.tpls, id])] : W.tpls.filter((x) => x !== id); renderWizard(); };
     A.gseSetPrompt = (t) => { W.prompt = t; if (W.step === 2) renderWizard(); else { W.step = 1; } };
@@ -203,6 +255,10 @@ window.LiveGse = (function () {
     A.gseFlowDel = (i) => { F.draft.spec.steps.splice(i, 1); A.route(); };
     A.gseAgent = (k, v) => { if (k === 'autonomy') F.draft.spec.autonomy = v; else if (k === 'fail_mode') F.draft.spec.guardrails.fail_mode = v; else F.draft.spec.tools = v.split(',').map((x) => x.trim()).filter(Boolean); };
     A.gseFlowSave = flowSave;
+    A.gseSagaSet = (k, v) => { SR[k] = v; if (k === 'mode') A.route(); };
+    A.gseSagaRun = sagaRun;
+    A.gseSagaOpen = (id) => { SR.run = id; A.route(); };
+    A.gseSagaRecover = async () => { if (!confirm('Kompensasi langkah yang sudah sukses pada run yang terhenti ini?')) return; try { await API.post(`/api/v1/gse/saga-runs/${SR.run}/recover`, {}); A.toast('Run dipulihkan', '', 'success'); A.route(); } catch (e) { fail(e); } };
     A.gseFlowCommit = async () => { const d = F.draft; try { await flowSave(); const r = await API.post(`/api/v1/gse/flows/${F.sel}/commit`, {}); F.draft = null; A.toast('Flow di-commit', esc(r.nama), 'success'); A.route(); } catch (e) { fail(e); } };
     A.gseFlowRemove = async () => { if (!confirm('Hapus flow ini?')) return; try { await API.del(`/api/v1/gse/flows/${F.draft.id}`); F.sel = null; F.draft = null; A.route(); } catch (e) { fail(e); } };
     A.gseIdeSel = (v) => { ide.sel = v; ide.file = null; A.route(); };
@@ -220,8 +276,8 @@ window.LiveGse = (function () {
       const proj = await API.get(`/api/v1/gse/projects/${ide.sel}`);
       if (!ide.file || !proj.files.some((f) => f.path === ide.file)) ide.file = proj.files[0].path;
       const f = await API.get(`/api/v1/gse/projects/${ide.sel}/file`, { path: ide.file });
-      box.innerHTML = `<div class="row mb"><select class="select" onchange="App.gseIdeSel(this.value)">${list.map((p) => `<option value="${p.id}" ${p.id === ide.sel ? 'selected' : ''}>${esc(p.kode)} · ${esc(p.branch)}</option>`).join('')}</select><button class="btn sm" onclick="App.gseBundle('${proj.id}','${esc(proj.kode)}')">⇩ Unduh bundel</button></div>
-        <div class="ide"><div class="ft">${proj.files.map((x) => `<div class="${x.path === ide.file ? 'on' : ''}" onclick="App.gseIdeFile('${esc(x.path)}')" title="${esc(x.path)}">${esc(x.path.split('/').pop())}<div class="tiny faint">${esc(x.path.split('/').slice(0, -1).join('/'))}</div></div>`).join('')}</div>
+      box.innerHTML = `<div class="row mb"><select class="select" onchange="App.gseIdeSel(this.value)">${list.map((p) => `<option value="${p.id}" ${p.id === ide.sel ? 'selected' : ''}>${esc(p.kode)} · ${esc(p.branch)}</option>`).join('')}</select><button class="btn sm" onclick="App.gseBundle(${window.jsArg(proj.id)},${window.jsArg(proj.kode)})">⇩ Unduh bundel</button></div>
+        <div class="ide"><div class="ft">${proj.files.map((x) => `<div class="${x.path === ide.file ? 'on' : ''}" onclick="App.gseIdeFile(${window.jsArg(x.path)})" title="${esc(x.path)}">${esc(x.path.split('/').pop())}<div class="tiny faint">${esc(x.path.split('/').slice(0, -1).join('/'))}</div></div>`).join('')}</div>
         <div class="ed"><div class="etabs"><div class="etab on">${esc(ide.file.split('/').pop())}</div></div><pre class="code">${f.content.split('\n').map((l, i) => `<span style="color:#4A5A6C;display:inline-block;width:32px;user-select:none">${i + 1}</span>${esc(l)}`).join('\n')}</pre><div class="status"><span>${esc(ide.file.split('.').pop())}</span><span>UTF-8</span><span>read-only</span><span style="margin-left:auto">${f.bytes} B</span></div></div></div>`;
     } catch (e) { box.innerHTML = errBox(e); }
   }
@@ -236,9 +292,9 @@ window.LiveGse = (function () {
       const sel = list.find((p) => p.id === pr.sel) || list[0]; pr.sel = sel.id;
       const stage = (g, label) => { const x = sel.gates && sel.gates[g]; return `<div class="pstage ${x ? { ok: 'ok', err: 'err', skipped: '' }[x.status] : ''}" title="${esc(x ? x.detail : '')}"><b>${label}</b>${x ? { ok: '✓ lolos', err: '✕ gagal', skipped: '– dilewati' }[x.status] : '—'}</div>`; };
       A.pr_select = (id) => { pr.sel = id; A.route(); };
-      box.innerHTML = `<div class="grid g-1-2">${A.card('Proyek / Branch', `<div class="list">${list.map((x) => `<div class="li" style="cursor:pointer;${x.id === sel.id ? 'background:var(--accent-soft)' : ''}" onclick="App.pr_select('${x.id}')"><span class="ic">⑂</span><div class="bd"><div class="t">${esc(x.kode)}</div><div class="d mono">${esc(x.branch)}</div></div>${stBadge(x.status)}</div>`).join('')}</div>`, { flush: true })}
+      box.innerHTML = `<div class="grid g-1-2">${A.card('Proyek / Branch', `<div class="list">${list.map((x) => `<div class="li" style="cursor:pointer;${x.id === sel.id ? 'background:var(--accent-soft)' : ''}" onclick="App.pr_select(${window.jsArg(x.id)})"><span class="ic">⑂</span><div class="bd"><div class="t">${esc(x.kode)}</div><div class="d mono">${esc(x.branch)}</div></div>${stBadge(x.status)}</div>`).join('')}</div>`, { flush: true })}
         <div class="stack">${A.card(`${esc(sel.repoGit || '—')} · ${esc(sel.branch)}`, `<div class="pipeline">${stage('pii-guard', 'pii-guard')}${stage('manifest', 'Manifest')}${stage('lint', 'Lint')}${stage('build', 'Build')}${stage('sca', 'SCA Grype & ORT')}${stage('sbom', 'SBOM Syft')}<div class="pstage"><b>Merge → ArgoCD</b>– belum ada konektor</div></div>
-          ${sel.reason ? `<div class="callout err mt"><span class="ic">⛔</span><div>${esc(sel.reason)}</div></div>` : ''}${sel.status === 'checks-failed' ? `<div class="callout err mt"><span class="ic">✕</span><div>${esc(Object.entries(sel.gates).filter(([, g]) => g.status === 'err').map(([k, g]) => k + ': ' + g.detail).join(' · '))}</div></div>` : ''}`, { acts: sel.fileCount ? `<button class="btn sm" onclick="App.gseBundle('${sel.id}','${esc(sel.kode)}')">⇩ Bundel</button>` : '' })}
+          ${sel.reason ? `<div class="callout err mt"><span class="ic">⛔</span><div>${esc(sel.reason)}</div></div>` : ''}${sel.status === 'checks-failed' ? `<div class="callout err mt"><span class="ic">✕</span><div>${esc(Object.entries(sel.gates).filter(([, g]) => g.status === 'err').map(([k, g]) => k + ': ' + g.detail).join(' · '))}</div></div>` : ''}`, { acts: sel.fileCount ? `<button class="btn sm" onclick="App.gseBundle(${window.jsArg(sel.id)},${window.jsArg(sel.kode)})">⇩ Bundel</button>` : '' })}
           ${A.card('Ringkasan', `<div class="grid g3">${A.kpi('Berkas', sel.fileCount)}${A.kpi('Ukuran', sel.bytes ? (sel.bytes / 1024).toFixed(1) + '<small>KB</small>' : '—')}${A.kpi('Durasi', ms(sel.durationMs))}</div><p class="small muted mt">Merge ke <code>${esc(sel.baseBranch)}</code> hanya lewat PR (reviewer: Domain Architect + Lead Software Engineer). PR otomatis belum tersedia.</p>`)}</div></div>`;
     } catch (e) { box.innerHTML = errBox(e); }
   }

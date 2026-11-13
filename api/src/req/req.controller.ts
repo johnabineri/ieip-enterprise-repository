@@ -7,7 +7,7 @@ import { ProblemException } from '../common/problem';
 import { DbService } from '../db/db.service';
 import { compose, deterministic, GREETING, llm, llmCfg, Slots, Step } from './elicit';
 import { validateGherkin } from './gherkin';
-import { evaluate, maskPii, MAX_LEN } from './guardrails';
+import { guard, guardEngine, maskPii, MAX_LEN } from './guardrails';
 
 class CreateSessionDto {
   @IsOptional() @IsString() @MinLength(2) @MaxLength(200) title?: string;
@@ -32,7 +32,7 @@ export class ReqController {
   constructor(private readonly db: DbService) {}
 
   @Get('status') @RequirePermission('req.session.write')
-  status() { const c = llmCfg(); return { mode: c ? 'llm' : 'deterministic', model: c?.model ?? null, guardrails: { engine: 'deterministic-local', failClosed: true, maxLength: MAX_LEN }, greeting: GREETING }; }
+  status() { const c = llmCfg(); return { mode: c ? 'llm' : 'deterministic', model: c?.model ?? null, guardrails: { engine: guardEngine().engine, failClosed: true, maxLength: MAX_LEN }, greeting: GREETING }; }
 
   @Get('sessions') @RequirePermission('req.session.write')
   sessions(@CurrentUser() p: Principal, @Query() q: Record<string, string>) {
@@ -70,9 +70,10 @@ export class ReqController {
       if (s.status === 'completed') throw new ProblemException(409, 'invalid-state', 'Sesi sudah selesai', 'Buat sesi baru untuk kebutuhan lain.');
       return (await c.query('SELECT COALESCE(max(seq),0)::int AS n, count(*) FILTER (WHERE role = \'user\' AND COALESCE((meta->>\'blocked\')::boolean, false) = false)::int AS u FROM req.message WHERE session_id = $1', [id])).rows[0];
     });
+    // D-14: masking DULU — teks ber-PII tidak dikirim ke OPA (layanan jaringan) maupun LLM; aturan guardrail tidak bergantung pada nilai PII
+    const masked = maskPii(b.content);
     let verdict;
-    try { verdict = evaluate(b.content, seqBase.u === 0); } catch (e) { throw new ProblemException(503, 'guardrail-unavailable', 'Guardrail tidak tersedia', (e as Error).message); }
-    const masked = maskPii(b.content);          // PII tidak pernah disimpan / dikirim ke LLM
+    try { verdict = await guard(masked.text, seqBase.u === 0); } catch (e) { throw new ProblemException(503, 'guardrail-unavailable', 'Guardrail tidak tersedia', (e as Error).message); }
     if (!verdict.allowed) {
       return this.db.tx(p, async (c) => {
         await c.query(`INSERT INTO req.message (session_id, seq, role, content, meta) VALUES ($1,$2,'user',$3,$4::jsonb), ($1,$5,'system',$6,$7::jsonb)`,

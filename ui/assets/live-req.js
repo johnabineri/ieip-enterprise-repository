@@ -23,7 +23,7 @@ window.LiveReq = (function () {
   function chatHtml() {
     return S.sess.messages.map((m) => {
       const meta = m.meta || {}; let tag = '';
-      if (m.role === 'system') tag = `${esc(meta.engine === 'opa-rego' ? 'OPA/Rego (aturan lokal)' : 'domain-fencing (aturan lokal)')} · ${meta.ms}ms · tercatat`;
+      if (m.role === 'system') tag = `${esc(meta.engine === 'opa' ? 'OPA (kebijakan Rego)' : 'aturan pola lokal')}${meta.category ? ' · ' + esc(meta.category) : ''} · ${meta.ms}ms · tercatat`;
       else if (m.role === 'assistant' && meta.engine) tag = `${esc(meta.engine)}${meta.ms ? ' · ' + meta.ms + 'ms' : ''}`;
       else if (m.role === 'user' && (meta.masked || []).length) tag = `PII dimasking: ${esc(meta.masked.join(', '))}`;
       const warn = (meta.warnings || []).map((w) => `<div class="tiny" style="color:var(--warn)">⚠ ${esc(w)}</div>`).join('');
@@ -65,7 +65,7 @@ window.LiveReq = (function () {
       const st = (await API.get('/api/v1/req/stories')).data;
       box.innerHTML = st.length ? st.map((s) => `<div class="grid g2 mb">${A.card(`${esc(s.code)} · ${esc(s.title)}`, `<p>${esc(s.story)}</p><h3 class="mt">Acceptance criteria</h3><ul class="small" style="padding-left:18px">${s.acceptance.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>
           <div class="row mt"><span class="badge b-info nodot">Prioritas: ${esc(s.priority)}</span>${s.valid ? A.pill(`Gherkin valid · ${s.validation.scenarios} skenario · ${s.validation.steps} langkah`, 'b-ok') : A.pill('Gherkin tidak valid', 'b-err')}<span class="tiny muted right">${esc(s.engine)}</span></div>`)}
-        ${A.card('Skenario Gherkin', `<pre class="code">${gherkinHtml(s.gherkin)}</pre>`, { acts: `<button class="btn sm" onclick="App.reqCopy('${s.id}')">Salin</button>` })}</div>`).join('')
+        ${A.card('Skenario Gherkin', `<pre class="code">${gherkinHtml(s.gherkin)}</pre>`, { acts: `<button class="btn sm" onclick="App.reqCopy(${window.jsArg(s.id)})">Salin</button>` })}</div>`).join('')
         : A.card('', '<div class="empty"><div class="big">∅</div>Belum ada User Story. Mulai dari menu “Sesi Elisitasi”.</div>');
       window.__reqStories = st;
     } catch (e) { box.innerHTML = errBox(e); }

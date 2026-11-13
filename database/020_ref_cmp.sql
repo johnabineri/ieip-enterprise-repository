@@ -8,9 +8,12 @@
 -- Semua 31 tabel wajib ada: langganan logis gagal bila tabel target tidak ada.
 -- =====================================================================
 CREATE SCHEMA IF NOT EXISTS ref;
-CREATE OR REPLACE FUNCTION ref.tg_reject_write() RETURNS trigger LANGUAGE plpgsql AS $b$
-BEGIN
-    RAISE EXCEPTION 'ref.% bersifat read-only (replika dari kalla_cmp); % ditolak', TG_TABLE_NAME, TG_OP USING ERRCODE = 'insufficient_privilege';
+CREATE OR REPLACE FUNCTION ref.tg_reject_write() RETURNS trigger LANGUAGE plpgsql AS $b$
+
+BEGIN
+
+    RAISE EXCEPTION 'ref.% bersifat read-only (replika dari kalla_cmp); % ditolak', TG_TABLE_NAME, TG_OP USING ERRCODE = 'insufficient_privilege';
+
 END $b$;
 CREATE TABLE ref.users (
     id uuid NOT NULL,
@@ -252,6 +255,8 @@ CREATE TABLE ref.org_units (
     name character varying(200) NOT NULL,
     unit_kind character varying(12) NOT NULL,
     path character varying(1000) NOT NULL,
+    valid_from date NOT NULL DEFAULT CURRENT_DATE,                 -- tanggal berlaku unit (kontrak 2026-11-06, CMP 208)
+    valid_to date,
     is_active boolean NOT NULL,
     deleted_at timestamp with time zone,
     row_version integer NOT NULL,
@@ -264,6 +269,7 @@ CREATE TABLE ref.parties (
     code shared.business_code NOT NULL,
     party_type character varying(12) NOT NULL,
     status character varying(12) NOT NULL,
+    merged_into_party_id uuid,
     is_active boolean NOT NULL,
     deleted_at timestamp with time zone,
     row_version integer NOT NULL,

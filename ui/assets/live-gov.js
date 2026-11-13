@@ -26,27 +26,37 @@ window.LiveGov = (function () {
       const per = (d) => refs.filter((r) => r.domain === d);
       box.innerHTML = `<div class="grid g3 mb">${DOMAINS.map((d) => { const dm = A.dom(d); return `<div class="card kpi" style="border-left:4px solid ${dm.color}"><div class="lbl">D${dm.n} · ${esc(dm.nama)}</div><div class="val">${per(d).length}<small>referensi</small></div><div class="tgt">${per(d).filter((r) => r.status === 'Dipublikasi').length} Dipublikasi</div></div>`; }).join('')}</div>` +
         A.card(`Daftar Referensi (${refs.length})`, A.table([{ h: 'Kode', v: (r) => `<b class="mono">${esc(r.kode)}</b>` }, { h: 'Domain', v: (r) => `<span class="row" style="gap:6px"><i class="dom-dot" style="background:${A.dom(r.domain).color}"></i>${esc(A.dom(r.domain).nama)}</span>` },
-          { h: 'Nama', v: (r) => esc(r.nama) }, { h: 'Versi', v: (r) => esc(r.versi) }, { h: 'Status', v: (r) => A.badge(r.status) }], refs, { click: (r) => `App.kraOpen('${r.id}')` }), { flush: true });
+          { h: 'Nama', v: (r) => esc(r.nama) }, { h: 'Versi', v: (r) => esc(r.versi) }, { h: 'Status', v: (r) => A.badge(r.status) }], refs, { click: (r) => `App.kraOpen(${window.jsArg(r.id)})` }), { flush: true });
     } catch (e) { box.innerHTML = errBox(e); }
   }
   async function kraForm(id) {
     const cur = id ? kra[id] : null;
     A.openModal(`<div class="drawer-hd"><h2>${cur ? 'Ubah' : 'Tambah'} KRA</h2><button class="x" onclick="App.closeAll()">×</button></div>
-      <form class="drawer-bd" id="kra-form" onsubmit="App.kraSave(event,'${id || ''}')"><div class="form-grid">
+      <form class="drawer-bd" id="kra-form" onsubmit="App.kraSave(event,${window.jsArg(id || '')})"><div class="form-grid">
         ${cur ? '' : `<div class="field"><label>Domain <span class="req">*</span></label><select class="select" name="domain">${DOMAINS.map((d) => `<option value="${d}">D${A.dom(d).n} · ${esc(A.dom(d).nama)}</option>`).join('')}</select></div>
         <div class="field"><label>Kode <span class="req">*</span></label><input class="input" name="kode" required placeholder="mis. KRA-DAT-002" pattern="[A-Z0-9][A-Z0-9_.\\-]*"></div>`}
         <div class="field full"><label>Nama <span class="req">*</span></label><input class="input" name="nama" required value="${esc(cur ? cur.nama : '')}"></div>
         <div class="field"><label>Versi</label><input class="input" name="versi" value="${esc(cur ? cur.versi : '1.0')}"></div>
         <div class="field full"><label>Deskripsi</label><textarea class="textarea" name="deskripsi">${esc(cur ? cur.deskripsi || '' : '')}</textarea></div></div><div id="kra-err" class="mt"></div>
-        <div class="callout info mt"><span class="ic">ℹ</span>KRA hanya disusun Holding EA Office (AF-04). Objek entitas wajib tertaut ke KRA sebelum Divalidasi.</div></form>
+        ${cur ? '<div id="kra-impact" class="mt"></div>' : ''}<div class="callout info mt"><span class="ic">ℹ</span>KRA hanya disusun Holding EA Office (AF-04). Objek entitas wajib tertaut ke KRA sebelum Divalidasi.</div></form>
       <div class="drawer-ft"><button class="btn" onclick="App.closeAll()">Batal</button><button class="btn pri" onclick="document.getElementById('kra-form').requestSubmit()">Simpan Draf</button></div>`);
+    if (cur) API.get(`/api/v1/eaw/references/${id}/impact`).then((imp) => { const b = document.getElementById('kra-impact'); if (b) b.innerHTML = af07Box(imp); }).catch(() => { /* tanpa izin */ });
   }
   async function kraSave(e, id) {
     e.preventDefault(); const f = Object.fromEntries(new FormData(e.target)); const body = { nama: f.nama, versi: f.versi || undefined, deskripsi: f.deskripsi || undefined };
     try {
-      if (id) await API.patch(`/api/v1/eaw/references/${id}`, body, `"${kra[id].version}"`); else await API.post('/api/v1/eaw/references', { ...body, domain: f.domain, kode: f.kode });
-      A.closeAll(); A.toast('KRA tersimpan', esc(f.nama), 'success'); A.route();
+      const res = id ? await API.patch(`/api/v1/eaw/references/${id}`, body, `"${kra[id].version}"`) : await API.post('/api/v1/eaw/references', { ...body, domain: f.domain, kode: f.kode });
+      A.closeAll();
+      if (res && res.reviewCascade && res.reviewCascade.total) A.toast('KRA naik versi — AF-07', `${res.reviewCascade.total} objek Dipublikasi ditandai <b>Direviu</b> (${esc(res.reviewCascade.from)} → ${esc(res.reviewCascade.to)}). Tinjau di riwayat alur.`, 'info');
+      else A.toast('KRA tersimpan', esc(f.nama), 'success');
+      A.route();
     } catch (x) { err('kra-err', x); }
+  }
+  const TYPE_ID = { application: 'Aplikasi', process: 'Proses', data_entity: 'Entitas Data', service: 'Layanan', infra_asset: 'Infrastruktur', control: 'Kontrol' };
+  function af07Box(imp) {
+    if (!imp) return '';
+    const parts = Object.entries(imp.byType).map(([t, m]) => `${esc(TYPE_ID[t] || t)}: ${Object.entries(m).map(([st, n]) => `${n} ${esc(st)}`).join(', ')}`).join(' · ');
+    return `<h3 class="mt">Dampak AF-07 bila versi dinaikkan</h3><div class="callout ${imp.willReview ? 'warn' : 'info'} mt-s"><span class="ic">${imp.willReview ? '⚠' : 'ℹ'}</span><div><b>${imp.willReview} objek Dipublikasi</b> akan masuk status <b>Direviu</b> (seluruh entitas, tercatat di riwayat alur). ${imp.unaffectedStatus} objek berstatus lain tidak berubah.${parts ? `<div class="tiny muted mt-s">${parts}</div>` : ''}</div></div>`;
   }
   async function kraOpen(id) {
     let r = kra[id]; try { r = await API.get(`/api/v1/eaw/references/${id}`); kra[id] = r; } catch (e) { if (!r) return fail(e); }
@@ -54,12 +64,13 @@ window.LiveGov = (function () {
     const linked = {}; const paths = [['Proses', 'processes'], ['Entitas Data', 'data-entities'], ['Layanan', 'services'], ['Infrastruktur', 'infra-assets'], ['Kontrol', 'controls']];
     for (const [l, p] of paths) { try { const n = (await API.all(`/api/v1/eaw/objects/${p}`)).filter((o) => o.referensiId === id).length; if (n) linked[l] = n; } catch (e) { /* tanpa izin */ } }
     const na = D.APPS.filter((a) => a.referensiId === id).length; if (na) linked.Aplikasi = na;
+    let imp = null; try { imp = await API.get(`/api/v1/eaw/references/${id}/impact`); } catch (e) { /* hanya peran lintas-holding */ }
     const next = NEXT[r.status]; const editable = r.status === 'Draf' && A.can('eaw.kra.write');
     A.openDrawer(`<div class="drawer-hd"><div><div class="row">${A.tag(r.kode)}${A.badge(r.status)}</div><h2 class="mt-s">${esc(r.nama)}</h2><p class="small muted">D${A.dom(r.domain).n} · ${esc(A.dom(r.domain).nama)} · versi ${esc(r.versi)}</p></div><button class="x" onclick="App.closeAll()">×</button></div>
       <div class="drawer-bd"><h3>Siklus status (AF-05)</h3><div class="mt-s">${A.lifecycle(r.status)}</div>
         <h3 class="mt">Deskripsi</h3><p class="small mt-s">${esc(r.deskripsi || '—')}</p>
-        <h3 class="mt">Objek tertaut</h3><div class="stack small mt-s">${Object.keys(linked).length ? Object.entries(linked).map(([l, n]) => `<div class="row"><span style="flex:1">${esc(l)}</span><b>${n}</b></div>`).join('') : '<span class="muted">Belum ada objek yang menautkan KRA ini (hanya objek yang terlihat oleh Anda yang dihitung).</span>'}</div></div>
-      <div class="drawer-ft">${editable ? `<button class="btn danger" onclick="App.kraDel('${id}')">Hapus</button><button class="btn" onclick="App.kraForm('${id}')">Ubah</button>` : ''}${A.lockBtn(next[2], next[1], `App.kraTrans('${id}')`, 'btn pri')}</div>`);
+        <h3 class="mt">Objek tertaut</h3><div class="stack small mt-s">${Object.keys(linked).length ? Object.entries(linked).map(([l, n]) => `<div class="row"><span style="flex:1">${esc(l)}</span><b>${n}</b></div>`).join('') : '<span class="muted">Belum ada objek yang menautkan KRA ini (hanya objek yang terlihat oleh Anda yang dihitung).</span>'}</div>${af07Box(imp)}</div>
+      <div class="drawer-ft">${editable ? `<button class="btn danger" onclick="App.kraDel(${window.jsArg(id)})">Hapus</button><button class="btn" onclick="App.kraForm(${window.jsArg(id)})">Ubah</button>` : ''}${A.lockBtn(next[2], next[1], `App.kraTrans(${window.jsArg(id)})`, 'btn pri')}</div>`);
   }
 
   /* ================= Framework Builder ================= */
@@ -72,7 +83,7 @@ window.LiveGov = (function () {
       const rules = await Promise.all(items.map((f) => fwRules(f.id)));
       box.innerHTML = items.length ? `<div class="grid g3">${items.map((f, i) => { const rs = rules[i] || []; const ok = rs.filter((r) => r.ok).length;
         return A.card(esc(f.layananUtama), `<div class="row">${A.tag(f.tipe)}<span class="small muted">${esc(f.entityCode)}</span></div><div class="progress mt-s"><i style="width:${Math.round((ok / 6) * 100)}%"></i></div><div class="tiny muted mt-s">${ok}/6 domain terpenuhi</div>
-          <div class="row mt-s" style="flex-wrap:wrap;gap:4px">${rs.map((r) => `<span class="badge ${r.ok ? 'b-ok' : ''}" title="${esc(r.pesan)}">${esc(r.rule.replace('_', ' '))}</span>`).join('')}</div><div class="row mt-s"><button class="btn sm" onclick="App.fwOpen('${f.id}')">Kelola</button></div>`, { acts: A.badge(f.status) }); }).join('')}</div>`
+          <div class="row mt-s" style="flex-wrap:wrap;gap:4px">${rs.map((r) => `<span class="badge ${r.ok ? 'b-ok' : ''}" title="${esc(r.pesan)}">${esc(r.rule.replace('_', ' '))}</span>`).join('')}</div><div class="row mt-s"><button class="btn sm" onclick="App.fwOpen(${window.jsArg(f.id)})">Kelola</button></div>`, { acts: A.badge(f.status) }); }).join('')}</div>`
         : A.card('', '<div class="empty"><div class="big">∅</div>Belum ada Kerangka Kerja. Buat satu per layanan utama (AF-02), lalu tandai relasi objek ke dalamnya.</div>');
     } catch (e) { box.innerHTML = errBox(e); }
   }
@@ -97,9 +108,9 @@ window.LiveGov = (function () {
     A.openDrawer(`<div class="drawer-hd"><div><div class="row">${A.tag(f.tipe)}${A.badge(f.status)}</div><h2 class="mt-s">${esc(f.layananUtama)}</h2><p class="small muted">${esc(f.entityCode)} · Kerangka Kerja</p></div><button class="x" onclick="App.closeAll()">×</button></div>
       <div class="drawer-bd"><h3>Siklus status (AF-05)</h3><div class="mt-s">${A.lifecycle(f.status)}</div>
         <h3 class="mt">Cakupan 6 domain (EAW-05)</h3><div class="stack mt-s">${rules.map((r) => `<div class="row small"><span style="color:${r.ok ? 'var(--ok)' : 'var(--err)'};font-weight:800;width:16px">${r.ok ? '✓' : '✕'}</span><span style="flex:1">${esc(r.pesan)}</span></div>`).join('')}</div>
-        <h3 class="mt">Relasi dalam kerangka (${inFw.length})</h3><div class="stack small mt-s">${inFw.length ? inFw.map((r) => `<div class="row"><span style="flex:1">${lbl(r)}</span>${editable ? `<button class="btn sm ghost" title="Lepas dari kerangka" onclick="App.fwTag('${id}','${r.id}',null)">✕</button>` : ''}</div>`).join('') : '<span class="muted">Belum ada relasi yang ditandai.</span>'}</div>
-        ${editable ? `<h3 class="mt">Tandai relasi yang sudah ada</h3><div class="row mt-s"><select class="select" id="fw-rel"><option value="">— pilih relasi (${free.length}) —</option>${free.map((r) => `<option value="${esc(r.id)}">${esc((r.sumberLabel || r.sumberType) + ' → ' + (r.targetLabel || r.targetType) + ' (' + r.tipe + ')')}</option>`).join('')}</select><button class="btn sm" onclick="App.fwTag('${id}',document.getElementById('fw-rel').value,'${id}')">Tandai</button></div><p class="tiny muted mt-s">Relasi dibuat di detail objek (aplikasi, layanan, proses). Hanya relasi dengan sumber Draf yang dapat ditandai.</p>` : ''}</div>
-      <div class="drawer-ft">${editable ? `<button class="btn danger" onclick="App.fwDel('${id}')">Hapus</button>` : ''}${A.lockBtn(next[2], next[1], `App.fwTrans('${id}')`, 'btn pri')}</div>`);
+        <h3 class="mt">Relasi dalam kerangka (${inFw.length})</h3><div class="stack small mt-s">${inFw.length ? inFw.map((r) => `<div class="row"><span style="flex:1">${lbl(r)}</span>${editable ? `<button class="btn sm ghost" title="Lepas dari kerangka" onclick="App.fwTag(${window.jsArg(id)},${window.jsArg(r.id)},null)">✕</button>` : ''}</div>`).join('') : '<span class="muted">Belum ada relasi yang ditandai.</span>'}</div>
+        ${editable ? `<h3 class="mt">Tandai relasi yang sudah ada</h3><div class="row mt-s"><select class="select" id="fw-rel"><option value="">— pilih relasi (${free.length}) —</option>${free.map((r) => `<option value="${esc(r.id)}">${esc((r.sumberLabel || r.sumberType) + ' → ' + (r.targetLabel || r.targetType) + ' (' + r.tipe + ')')}</option>`).join('')}</select><button class="btn sm" onclick="App.fwTag(${window.jsArg(id)},document.getElementById('fw-rel').value,${window.jsArg(id)})">Tandai</button></div><p class="tiny muted mt-s">Relasi dibuat di detail objek (aplikasi, layanan, proses). Hanya relasi dengan sumber Draf yang dapat ditandai.</p>` : ''}</div>
+      <div class="drawer-ft">${editable ? `<button class="btn danger" onclick="App.fwDel(${window.jsArg(id)})">Hapus</button>` : ''}${A.lockBtn(next[2], next[1], `App.fwTrans(${window.jsArg(id)})`, 'btn pri')}</div>`);
   }
 
   /* ================= ARB ================= */
@@ -158,7 +169,7 @@ window.LiveGov = (function () {
       <div class="grid g2 mt">
         ${A.card('Objek per Jenis & Status', A.table([{ h: 'Jenis', v: (r) => `<b>${esc(r[1])}</b>` }, ...ST.map((s, i) => ({ h: s, num: 1, v: (r) => d.objects[r[0]].byStatus[s] })), { h: 'Total', num: 1, v: (r) => `<b>${d.objects[r[0]].total}</b>` }], TYPES), { flush: true })}
         ${A.card('Pelacak Tiket ARB Clearance', D.ARB.length ? A.table([{ h: 'Tiket', v: (r) => `<span class="mono">${esc(r.no)}</span>` }, { h: 'Inisiatif', v: (r) => esc(r.name) }, { h: 'Kemiripan', num: 1, v: (r) => `<b style="color:${r.score >= 75 ? 'var(--err)' : 'var(--text)'}">${r.score}%</b>` }, { h: 'Status', v: (r) => A.arbBadge(r.status) }],
-          D.ARB.slice(0, 6), { click: (r) => `App.arbDetail('${r.no}')` }) : '<div class="empty">Belum ada tiket ARB.</div>', { flush: true, acts: '<a class="btn sm" href="#/eaw/arb">Meja Sidang →</a>' })}
+          D.ARB.slice(0, 6), { click: (r) => `App.arbDetail(${window.jsArg(r.no)})` }) : '<div class="empty">Belum ada tiket ARB.</div>', { flush: true, acts: '<a class="btn sm" href="#/eaw/arb">Meja Sidang →</a>' })}
       </div>`;
   }
 
@@ -169,7 +180,7 @@ window.LiveGov = (function () {
     const box = document.getElementById('gov-body'); if (!box) return;
     let rows; try { rows = (await API.get('/api/v1/eaw/entity-org')).data; } catch (e) { box.innerHTML = errBox(e); return; }
     const byParent = new Map(); rows.forEach((r) => { const k = rows.some((x) => x.id === r.parentId) ? r.parentId : ''; (byParent.get(k) || byParent.set(k, []).get(k)).push(r); });
-    const node = (r) => `<li><div class="node ${r.id === orgSel ? 'on' : ''}" onclick="App.orgSelect('${r.id}')"><span class="lvl">${esc(r.kafLevel || '')}</span><b style="flex:1">${esc(r.name)}</b><span class="tag">${esc(r.code)}</span>${r.kafLevelConfirmed ? '<span class="badge b-ok nodot" title="Tingkat KAF dikonfirmasi">✓</span>' : '<span class="badge nodot" title="Belum dikonfirmasi (memakai pemetaan bawaan)">·</span>'}${r.ikaLevel ? A.ikaPill(r.ikaLevel) : '<span class="tiny muted">IKA —</span>'}</div>${(byParent.get(r.id) || []).length ? `<ul>${byParent.get(r.id).map(node).join('')}</ul>` : ''}</li>`;
+    const node = (r) => `<li><div class="node ${r.id === orgSel ? 'on' : ''}" onclick="App.orgSelect(${window.jsArg(r.id)})"><span class="lvl">${esc(r.kafLevel || '')}</span><b style="flex:1">${esc(r.name)}</b><span class="tag">${esc(r.code)}</span>${r.kafLevelConfirmed ? '<span class="badge b-ok nodot" title="Tingkat KAF dikonfirmasi">✓</span>' : '<span class="badge nodot" title="Belum dikonfirmasi (memakai pemetaan bawaan)">·</span>'}${r.ikaLevel ? A.ikaPill(r.ikaLevel) : '<span class="tiny muted">IKA —</span>'}</div>${(byParent.get(r.id) || []).length ? `<ul>${byParent.get(r.id).map(node).join('')}</ul>` : ''}</li>`;
     const roots = byParent.get('') || [];
     const sel = rows.find((r) => r.id === orgSel) || roots[0]; orgSel = sel && sel.id;
     const conf = rows.filter((r) => r.kafLevelConfirmed).length; const rated = rows.filter((r) => r.ikaLevel).length;
@@ -177,7 +188,7 @@ window.LiveGov = (function () {
     box.innerHTML = `<div class="callout gold mb"><span class="ic">🔒</span><div><b>CMP = SSOT struktur organisasi.</b> Nama dan hierarki diubah di SEDDI (DD-02). EAP hanya mengelola atribut arsitektur di <code>eaw.entity_org_metadata</code>: tingkat KAF, IKA, tautan KRA, catatan.</div></div>
       <div class="grid g3 mb">${A.kpi('Entitas', rows.length, { tgt: 'dari replika ref.business_groups' })}${A.kpi('Tingkat KAF dikonfirmasi', `${conf}<small>/ ${rows.length}</small>`, { tgt: 'langkah 1 bootstrap' })}${A.kpi('Sudah dinilai IKA', `${rated}<small>/ ${rows.length}</small>`, { tgt: 'skala 1–5 (SAF §6.3)' })}</div>
       <div class="grid g-2-1">${A.card('Hierarki (dari ref.business_groups)', `<div class="tree"><ul>${roots.map(node).join('')}</ul></div>`, { acts: canW && conf < rows.length ? '<button class="btn sm" onclick="App.orgConfirmAll()">✓ Konfirmasi semua tingkat KAF</button>' : '' })}
-      ${sel ? A.card('Metadata Arsitektur', `<form id="org-form" onsubmit="App.orgSave(event,'${sel.id}')" class="stack"><div><b>${esc(sel.name)}</b><div class="tiny muted">${esc(sel.code)} · ${esc(sel.groupKind)}</div></div>
+      ${sel ? A.card('Metadata Arsitektur', `<form id="org-form" onsubmit="App.orgSave(event,${window.jsArg(sel.id)})" class="stack"><div><b>${esc(sel.name)}</b><div class="tiny muted">${esc(sel.code)} · ${esc(sel.groupKind)}</div></div>
         <div class="field"><label>Tingkat KAF</label><select class="select" name="kafLevel" ${canW ? '' : 'disabled'}>${['holding', 'ecosystem', 'sbu', 'unit'].map((k) => `<option ${k === sel.kafLevel ? 'selected' : ''}>${k}</option>`).join('')}</select></div>
         <div class="field"><label>IKA (1–5)</label><select class="select" name="ikaLevel" ${canW ? '' : 'disabled'}><option value="">— belum dinilai —</option>${[1, 2, 3, 4, 5].map((n) => `<option ${n === sel.ikaLevel ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
         <div class="field"><label>Tautan KRA default</label><select class="select" name="referenceId" ${canW ? '' : 'disabled'}><option value="">— tidak ada —</option>${kras.map((k) => `<option value="${esc(k.id)}" ${k.id === sel.referenceId ? 'selected' : ''}>${esc(k.kode)} · ${esc(k.nama)}</option>`).join('')}</select></div>
@@ -222,7 +233,7 @@ window.LiveGov = (function () {
     A.arbDetail = (no) => {
       arbDetail(no); const t = D.ARB.find((x) => x.no === no); const ft = document.querySelector('#drawer .drawer-ft');
       if (t && t.status === 'REVISION' && t.proposedBy === D.USERS[0].sub && A.can('eaw.arb.submit')) {
-        const html = `<button class="btn pri" onclick="App.arbResubmit('${esc(no)}')">Ajukan ulang</button>`;
+        const html = `<button class="btn pri" onclick="App.arbResubmit(${window.jsArg(no)})">Ajukan ulang</button>`;
         if (ft) ft.insertAdjacentHTML('afterbegin', html); else document.querySelector('#drawer').insertAdjacentHTML('beforeend', `<div class="drawer-ft">${html}</div>`);
       }
     };

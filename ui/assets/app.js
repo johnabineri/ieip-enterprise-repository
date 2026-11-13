@@ -18,6 +18,10 @@
   /* ---------- helpers ---------- */
   const STATUS_CLS = { Draf: 'b-draf', Divalidasi: 'b-val', Ditetapkan: 'b-tet', Dipublikasi: 'b-pub', Direviu: 'b-rev' };
   const badge = (s) => `<span class="badge ${STATUS_CLS[s] || ''}">${esc(s)}</span>`;
+  /** Argumen aman untuk handler inline (onclick="App.fn(${jsArg(x)})"): literal JSON (string/angka/boolean/null) dengan < > & ' dan U+2028/2029 -> \uXXXX dan " -> &quot;.
+   *  JANGAN menyisipkan data ke string JS di atribut HTML dengan esc(): entitas didekode SEBELUM JavaScript diparse (XSS). Pemeriksa: eap/scripts/check_ui_handlers.py */
+  const jsArg = (v) => (v === undefined ? 'null' : JSON.stringify(v)).replace(/[<>&'\u2028\u2029]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).replace(/"/g, '&quot;');
+  window.jsArg = jsArg;
   const pill = (txt, cls = '') => `<span class="badge ${cls}">${esc(txt)}</span>`;
   const tag = (txt, cls = '') => `<span class="tag ${cls}">${esc(txt)}</span>`;
   const modeTag = (m) => m === 'FEDERATED_REMOTE' ? tag('MF 2.0', 'mf') : tag('INTERNAL', 'ir');
@@ -33,7 +37,7 @@
   const can = (p) => (D.RP[S.role] || []).includes(p);
   const lockBtn = (perm, label, onclick, cls = 'btn') => can(perm)
     ? `<button class="${cls}" onclick="${onclick}">${label}</button>`
-    : `<button class="${cls}" onclick="App.deny('${perm}')" title="Butuh izin ${perm}" aria-disabled="true" style="opacity:.55"><span class="lock">🔒</span>${label}</button>`;
+    : `<button class="${cls}" onclick="App.deny(${window.jsArg(perm)})" title="Butuh izin ${perm}" aria-disabled="true" style="opacity:.55"><span class="lock">🔒</span>${label}</button>`;
   function deny(perm) {
     D.AUDIT.unshift({ id: D.AUDIT[0].id + 1, t: now(), sch: 'set', tbl: 'access_denied', act: 'insert', by: currentUser().uname, rec: perm, ch: '403 Forbidden — di luar lingkup peran ' + S.role });
     toast('403 — Akses ditolak', `Peran ${role().name} tidak memiliki izin <code>${perm}</code>. Percobaan dicatat di audit trail (EAW-07).`, 'error');
@@ -122,7 +126,7 @@
 
   /* ---------- shell rendering ---------- */
   function renderHeader() {
-    $('#ws-tabs').innerHTML = WS.map((w) => `<button class="ws-tab" data-ws="${w.id}" onclick="location.hash='#/${w.id}/${w.groups[0][1][0][0]}'">${w.code}<span class="mode">${w.mode}</span></button>`).join('');
+    $('#ws-tabs').innerHTML = WS.map((w) => `<button class="ws-tab" data-ws="${w.id}" onclick="location.hash=${jsArg('#/' + w.id + '/' + w.groups[0][1][0][0])}">${w.code}<span class="mode">${w.mode}</span></button>`).join('');
     $('#entity-sel').innerHTML = D.ENTITIES.filter((e) => e.tingkat !== 'unit').map((e) => `<option value="${e.id}" ${e.id === S.entity ? 'selected' : ''}>${e.tingkat === 'holding' ? '' : e.tingkat === 'ecosystem' ? '— ' : '—— '}${esc(e.nama)}</option>`).join('');
     const u = currentUser();
     $('#avatar').textContent = u.uname.slice(0, 2).toUpperCase();
@@ -158,7 +162,7 @@
   const card = (title, body, { meta = '', acts = '', flush = false, cls = '' } = {}) => `<section class="card ${cls}">${title ? `<div class="card-hd"><h2>${title}</h2>${meta ? `<span class="meta">${meta}</span>` : ''}${acts}</div>` : ''}<div class="card-bd ${flush ? 'flush' : ''}">${body}</div></section>`;
   const kpi = (lbl, val, { delta, up = true, tgt } = {}) => `<div class="card kpi"><div class="lbl">${lbl}</div><div class="val">${val}</div>${delta ? `<div class="delta ${up ? 'up' : 'dn'}">${delta}</div>` : ''}${tgt ? `<div class="tgt">${tgt}</div>` : ''}</div>`;
   const table = (cols, rows, { click } = {}) => `<div class="tbl-wrap"><table class="tbl"><thead><tr>${cols.map((c) => `<th class="${c.num ? 'num' : ''}">${c.h}</th>`).join('')}</tr></thead><tbody>${rows.map((r, i) => `<tr class="${click ? 'click' : ''}" ${click ? `onclick="${click(r, i)}"` : ''}>${cols.map((c) => `<td class="${c.num ? 'num' : ''} ${c.cls || ''}">${c.v(r, i)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  const tabs = (id, items, active) => `<div class="tabs" role="tablist">${items.map(([k, l]) => `<button class="tab ${k === active ? 'on' : ''}" onclick="App.tab('${id}','${k}')">${l}</button>`).join('')}</div>`;
+  const tabs = (id, items, active) => `<div class="tabs" role="tablist">${items.map(([k, l]) => `<button class="tab ${k === active ? 'on' : ''}" onclick="App.tab(${window.jsArg(id)},${window.jsArg(k)})">${l}</button>`).join('')}</div>`;
   const TABSTATE = {};
   function tab(id, k) { TABSTATE[id] = k; route(); }
 
@@ -193,7 +197,7 @@
     p.innerHTML = `<div class="card-bd"><div class="row"><span class="avatar" style="width:40px;height:40px">${u.uname.slice(0, 2).toUpperCase()}</span><div><b>${u.uname}</b><div class="tiny muted">profil tampilan dari <code>ref.users</code> (CDC ← kalla_cmp.iam.users)</div></div></div>
       <dl class="dl mt" style="grid-template-columns:110px 1fr"><dt>idp_subject</dt><dd class="mono tiny">${u.sub}</dd><dt>Token</dt><dd><span class="tag">RS256</span> <span class="tag">exp ≤ 1 jam</span></dd><dt>Lingkup</dt><dd>${u.scope ? esc(ent(u.scope).nama) : 'Holding-wide'}</dd></dl>
       <div class="field mt"><label>Peran aktif (demo RBAC — 13 role resmi)</label><select class="select" onchange="App.setRole(this.value)">${D.ROLES.map((r) => `<option value="${r.code}" ${r.code === S.role ? 'selected' : ''}>${r.name}</option>`).join('')}</select><span class="hint">Tombol aksi akan terkunci/terbuka sesuai izin <code>&lt;workspace&gt;.&lt;modul&gt;.&lt;aksi&gt;</code>.</span></div>
-      <div class="field mt"><label>Tema</label><div class="chips">${['auto', 'light', 'dark'].map((t) => `<button class="chip ${S.theme === t ? 'on' : ''}" onclick="App.setTheme('${t}')">${{ auto: 'Sistem', light: 'Terang', dark: 'Gelap' }[t]}</button>`).join('')}</div></div>
+      <div class="field mt"><label>Tema</label><div class="chips">${['auto', 'light', 'dark'].map((t) => `<button class="chip ${S.theme === t ? 'on' : ''}" onclick="App.setTheme(${window.jsArg(t)})">${{ auto: 'Sistem', light: 'Terang', dark: 'Gelap' }[t]}</button>`).join('')}</div></div>
       <div class="row mt"><button class="btn sm" onclick="App.toast('Bahasa: English','UI dwibahasa ID/EN (EAW-01 AC-6)','info')">ID / EN</button><button class="btn sm right" onclick="App.toast('Keluar','Sesi SSO Keycloak diakhiri (OIDC logout)','info')">Keluar</button></div></div>`;
     p.classList.add('on');
   }

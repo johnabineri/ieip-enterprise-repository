@@ -12,8 +12,11 @@ export interface GitProvider {
   name: GitProviderName;
   repoPath(repoGit: string | null | undefined): string;
   defaultBranch(path: string): Promise<string | null>;
+  fileExists(path: string, file: string, ref: string): Promise<boolean>;
   /** Buat branch + commit seluruh berkas. Bila gagal di tengah jalan, adaptor membersihkan cabang yang sempat dibuat. */
-  pushBranch(path: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string }>): Promise<{ commitSha: string }>;
+  pushBranch(path: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string; update?: boolean }>): Promise<{ commitSha: string }>;
+  /** GSE-05: commit lanjutan (create/update/delete) ke cabang fitur yang SUDAH ADA; hanya fast-forward (tidak pernah memaksa/menimpa). */
+  commitToBranch(path: string, branch: string, message: string, changes: Array<{ path: string; action: 'create' | 'update' | 'delete'; content?: string }>): Promise<{ commitSha: string }>;
   openReview(path: string, branch: string, base: string, title: string, body: string): Promise<{ number: number; url: string }>;
   deleteBranch(path: string, branch: string): Promise<void>;
   latestCi(path: string, branch: string): Promise<CiInfo | null>;
@@ -25,11 +28,13 @@ class GitlabProvider implements GitProvider {
   constructor(private readonly cfg: NonNullable<ReturnType<typeof gitlabCfg>>) { this.gl = new Gitlab(cfg); }
   repoPath = (r: string | null | undefined) => gitlabRepoPath(r, this.cfg);
   async defaultBranch(path: string) { return (await this.gl.project(path)).default_branch; }
-  async pushBranch(path: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string }>) {
+  fileExists = (path: string, file: string, ref: string) => this.gl.fileExists(path, file, ref);
+  async pushBranch(path: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string; update?: boolean }>) {
     await this.gl.createBranch(path, branch, base);
     try { return { commitSha: (await this.gl.commit(path, branch, message, files)).id }; }
     catch (e) { await this.gl.deleteBranch(path, branch).catch(() => undefined); throw e; }
   }
+  async commitToBranch(path: string, branch: string, message: string, changes: Array<{ path: string; action: 'create' | 'update' | 'delete'; content?: string }>) { return { commitSha: (await this.gl.commitActions(path, branch, message, changes)).id }; }
   async openReview(path: string, branch: string, base: string, title: string, body: string) { const r = await this.gl.mergeRequest(path, branch, base, title, body); return { number: r.iid, url: r.web_url }; }
   deleteBranch = (path: string, branch: string) => this.gl.deleteBranch(path, branch);
   async latestCi(path: string, branch: string) { const p = await this.gl.latestPipeline(path, branch); return p ? { id: p.id, status: p.status, url: p.web_url, sha: p.sha ?? null } : null; }
@@ -41,7 +46,9 @@ class GithubProvider implements GitProvider {
   constructor(private readonly cfg: NonNullable<ReturnType<typeof githubCfg>>) { this.gh = new Github(cfg); }
   repoPath = (r: string | null | undefined) => githubRepoPath(r, this.cfg);
   defaultBranch = (path: string) => this.gh.defaultBranch(path);
-  pushBranch = (path: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string }>) => this.gh.pushBranch(path, branch, base, message, files);
+  fileExists = (path: string, file: string, ref: string) => this.gh.fileExists(path, file, ref);
+  pushBranch = (path: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string; update?: boolean }>) => this.gh.pushBranch(path, branch, base, message, files);
+  commitToBranch = (path: string, branch: string, message: string, changes: Array<{ path: string; action: 'create' | 'update' | 'delete'; content?: string }>) => this.gh.commitToBranch(path, branch, message, changes);
   async openReview(path: string, branch: string, base: string, title: string, body: string) { const r = await this.gh.pullRequest(path, branch, base, title, body); return { number: r.number, url: r.html_url }; }
   deleteBranch = (path: string, branch: string) => this.gh.deleteBranch(path, branch);
   latestCi = (path: string, branch: string) => this.gh.latestRun(path, branch);

@@ -1,4 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import { ProblemException as _PE } from '../common/problem';
+import { configuredProvider, requireProvider } from '../gse/git-provider';
+import { adrFilePath, adrMarkdown, AdrDoc, sha256 as adrSha } from './adr-markdown';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
@@ -116,9 +119,29 @@ export class ReferencesController {
       if (!cur) throw new NotFoundException('referensi tidak ditemukan atau di luar cakupan akses');
       assertVersion(v, cur.row_version);
       if (b.nama === undefined && b.versi === undefined && b.deskripsi === undefined) throw new ProblemException(422, 'validation-failed', 'Tidak ada perubahan');
-      return refDto((await c.query(
+      await c.query(`SELECT set_config('eaw.af07_marked', '', true)`);                  // bersihkan sisa kaskade sebelumnya dalam transaksi ini
+      const row = (await c.query(
         `UPDATE eaw.reference SET nama = COALESCE($2, nama), versi = COALESCE($3, versi), deskripsi = COALESCE($4, deskripsi) WHERE id = $1 RETURNING ${REF}`,
-        [id, b.nama ?? null, b.versi ?? null, b.deskripsi ?? null])).rows[0]);
+        [id, b.nama ?? null, b.versi ?? null, b.deskripsi ?? null])).rows[0];
+      // AF-07: trigger DB menandai objek tertaut yang Dipublikasi menjadi Direviu bila versi berubah; ringkasannya dikembalikan agar pengguna tahu dampaknya
+      const marked = (await c.query(`SELECT NULLIF(current_setting('eaw.af07_marked', true), '') AS m`)).rows[0].m;
+      return { ...refDto(row), ...(marked ? { reviewCascade: JSON.parse(marked) } : {}) };
+    });
+  }
+
+  /** Pratinjau AF-07: berapa objek tertaut per jenis/status; yang Dipublikasi akan masuk Direviu bila versi KRA dinaikkan. Hanya peran lintas-holding (diperiksa DB). */
+  @Get(':id/impact') @RequirePermission('eaw.reference.read')
+  async impact(@CurrentUser() p: Principal, @Param('id') id: string) {
+    return this.db.tx(p, async (c) => {
+      const kra = (await c.query('SELECT id, kode, versi, status FROM eaw.reference WHERE id = $1 AND deleted_at IS NULL', [uuidOr400(id)])).rows[0];
+      if (!kra) throw new NotFoundException('referensi tidak ditemukan atau di luar cakupan akses');
+      const rows = (await c.query('SELECT objek_type, status, jumlah FROM eaw.kra_impact($1)', [id])).rows;
+      const byType: Record<string, Record<string, number>> = {};
+      for (const r of rows) (byType[r.objek_type] ??= {})[r.status] = r.jumlah;
+      const total = rows.reduce((a: number, r: any) => a + r.jumlah, 0);
+      const willReview = rows.filter((r: any) => r.status === 'Dipublikasi').reduce((a: number, r: any) => a + r.jumlah, 0);
+      return { kra: { id: kra.id, kode: kra.kode, versi: kra.versi, status: kra.status }, total, willReview, unaffectedStatus: total - willReview, byType,
+        catatan: 'Hanya objek berstatus Dipublikasi yang masuk Direviu (alur AF-05); status lain tidak berubah.' };
     });
   }
 
@@ -158,6 +181,21 @@ class AdrLinkDto {
 const ADR = 'id, adr_code, title, context, decision, consequences, status, superseded_by, git_ref, created_by, created_at, row_version';
 const adrDto = (r: any) => ({ id: r.id, adrCode: r.adr_code, title: r.title, context: r.context, decision: r.decision, consequences: r.consequences, status: r.status,
   supersededBy: r.superseded_by, gitRef: r.git_ref, createdBy: r.created_by, createdAt: r.created_at, version: r.row_version });
+
+
+class PublishAdrDto { @IsOptional() @IsString() @MaxLength(200) commitMessage?: string }
+const adrDir = () => { const d = (process.env.ADR_GIT_DIR || 'docs/adr').replace(/^\/+|\/+$/g, ''); if (!/^[\w./-]+$/.test(d) || d.includes('..')) throw new _PE(500, 'internal', 'ADR_GIT_DIR tidak sah'); return d; };
+const gitDto = (r: any) => ({ id: r.id, adrId: r.adr_id, adrCode: r.adr_code, adrStatus: r.adr_status, provider: r.provider, repoPath: r.repo_path, branch: r.ref, baseBranch: r.base_branch,
+  filePath: r.file_path, contentSha256: r.content_sha256, commitSha: r.commit_sha, prNumber: r.pr_number, prUrl: r.pr_url, createdBy: r.created_by, createdAt: r.created_at });
+/** Memuat ADR + tautan model yang TERLIHAT pemanggil + kode ADR pengganti + publikasi Git terakhir. */
+async function loadDoc(c: any, id: string): Promise<{ doc: AdrDoc; last: any }> {
+  const a = (await c.query(`SELECT a.*, s.adr_code AS superseded_code FROM eaw.adr a LEFT JOIN eaw.adr s ON s.id = a.superseded_by WHERE a.id = $1 AND a.deleted_at IS NULL`, [id])).rows[0];
+  if (!a) throw new NotFoundException('ADR tidak ditemukan');
+  const links = (await c.query(`SELECT objek_type AS type, CASE objek_type WHEN 'reference' THEN (SELECT r.kode || ' · ' || r.nama FROM eaw.reference r WHERE r.id = objek_id AND r.deleted_at IS NULL) ELSE eaw.object_label(objek_type, objek_id) END AS label
+    FROM eaw.adr_link WHERE adr_id = $1 AND deleted_at IS NULL`, [id])).rows.filter((l: any) => l.label);
+  const last = (await c.query('SELECT * FROM eaw.adr_git WHERE adr_id = $1 ORDER BY created_at DESC, id LIMIT 1', [id])).rows[0] ?? null;
+  return { doc: { code: a.adr_code, title: a.title, status: a.status, context: a.context, decision: a.decision, consequences: a.consequences, createdAt: a.created_at, supersededByCode: a.superseded_code, links }, last };
+}
 
 /** ADR (EAW-04): status hanya oleh pemegang eaw.baseline.approve (keputusan ARB); isi terkunci setelah Proposed (trigger DB). */
 @Controller('api/v1/eaw/adrs')
@@ -212,6 +250,65 @@ export class AdrsController {
       const r = await c.query(`UPDATE eaw.adr SET status = $2, superseded_by = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING ${ADR}`, [uuidOr400(id), b.status, b.supersededBy ?? null]);
       if (!r.rowCount) throw new NotFoundException('ADR tidak ditemukan');
       return adrDto(r.rows[0]);
+    });
+  }
+
+
+  // ---------------- ADR -> Git (EAW-04): berkas Markdown di repositori lewat branch + PR/MR ----------------
+  /** Konfigurasi repositori ADR (env). Token penyedia Git tidak pernah dikembalikan. */
+  @Get('git/status') @RequirePermission('eaw.adr.read')
+  gitStatus() {
+    const pv = configuredProvider();
+    return { configured: !!(pv && process.env.ADR_GIT_REPO), provider: pv?.name ?? null, repo: process.env.ADR_GIT_REPO ?? null, dir: adrDir(), baseBranch: process.env.ADR_GIT_BASE ?? null };
+  }
+
+  /** Pratinjau berkas Markdown yang akan di-commit (deterministik; sha256 stabil). */
+  @Get(':id/markdown') @RequirePermission('eaw.adr.read')
+  async markdown(@CurrentUser() p: Principal, @Param('id') id: string) {
+    const { doc } = await this.db.tx(p, async (c) => loadDoc(c, uuidOr400(id)));
+    const content = adrMarkdown(doc);
+    return { path: adrFilePath(adrDir(), doc.code), sha256: adrSha(content), content };
+  }
+
+  @Get(':id/git') @RequirePermission('eaw.adr.read')
+  async gitHistory(@CurrentUser() p: Principal, @Param('id') id: string) {
+    return this.db.tx(p, async (c) => {
+      const pid = uuidOr400(id);
+      if (!(await c.query('SELECT 1 FROM eaw.adr WHERE id = $1 AND deleted_at IS NULL', [pid])).rowCount) throw new NotFoundException('ADR tidak ditemukan');
+      return { configured: !!(configuredProvider() && process.env.ADR_GIT_REPO), data: (await c.query('SELECT * FROM eaw.adr_git WHERE adr_id = $1 ORDER BY created_at DESC, id', [pid])).rows.map(gitDto) };
+    });
+  }
+
+  /**
+   * Menerbitkan ADR ke Git: render Markdown -> branch baru adr/<kode>-<status>-<sha8> -> commit satu berkas -> PR/MR ke cabang dasar. Tidak pernah push/merge ke
+   * cabang utama. Isi sama dengan publikasi terakhir -> 409. Berkas sudah ada di cabang dasar -> diperbarui (update), bukan dibuat. HTTP di luar transaksi DB.
+   */
+  @Post(':id/git') @HttpCode(201) @RequirePermission('eaw.adr.write')
+  async publishGit(@CurrentUser() p: Principal, @Param('id') id: string, @Body() b: PublishAdrDto) {
+    const prov = requireProvider(); const repoEnv = process.env.ADR_GIT_REPO;
+    if (!repoEnv) throw new _PE(503, 'service-unavailable', 'Repositori ADR belum dikonfigurasi', 'Atur ADR_GIT_REPO (mis. pemilik/repo atau grup/proyek) pada API.');
+    const pid = uuidOr400(id);
+    const { doc, last } = await this.db.tx(p, async (c) => loadDoc(c, pid));
+    const content = adrMarkdown(doc); const sha = adrSha(content);
+    if (last && last.content_sha256 === sha) throw new _PE(409, 'conflict', 'Tidak ada perubahan sejak publikasi terakhir', `Isi ADR identik dengan PR #${last.pr_number} (${last.pr_url}).`);
+    const path = prov.repoPath(repoEnv);
+    const base = process.env.ADR_GIT_BASE || await prov.defaultBranch(path);
+    if (!base) throw new _PE(422, 'validation-failed', 'Cabang dasar tidak diketahui', 'Set ADR_GIT_BASE atau pastikan repo punya default branch.');
+    const file = adrFilePath(adrDir(), doc.code);
+    const exists = await prov.fileExists(path, file, base);
+    const branch = `adr/${doc.code.toLowerCase()}-${doc.status.toLowerCase()}-${sha.slice(0, 8)}`;
+    const message = b.commitMessage?.trim() || `docs(adr): ${doc.code} ${exists ? 'perbarui' : 'tambah'} — ${doc.title}`.slice(0, 200);
+    const { commitSha } = await prov.pushBranch(path, branch, base, message, [{ path: file, content, update: exists }]);
+    let pr: { number: number; url: string };
+    try {
+      pr = await prov.openReview(path, branch, base, `ADR ${doc.code}: ${doc.title}`.slice(0, 200),
+        `Publikasi otomatis ADR dari SAORAJA EAP (EAW-04).\n\n- Kode: ${doc.code}\n- Status: ${doc.status}\n- Berkas: \`${file}\` (${exists ? 'diperbarui' : 'baru'})\n- sha256 isi: \`${sha}\`\n\nReviu manusia diperlukan sebelum merge; tidak ada push langsung ke ${base}.`);
+    } catch (e) { await prov.deleteBranch(path, branch).catch(() => undefined); throw e; }
+    return this.db.tx(p, async (c) => {
+      const r = (await c.query(`INSERT INTO eaw.adr_git (adr_id, adr_code, adr_status, provider, repo_path, ref, base_branch, file_path, content_sha256, commit_sha, pr_number, pr_url)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`, [pid, doc.code, doc.status, prov.name, path, branch, base, file, sha, commitSha, pr.number, pr.url])).rows[0];
+      await c.query('UPDATE eaw.adr SET git_ref = $2 WHERE id = $1', [pid, `${path}:${file} @ ${commitSha.slice(0, 10)} (${prov.name === 'github' ? 'PR' : 'MR'} #${pr.number})`.slice(0, 255)]);
+      return gitDto(r);
     });
   }
 

@@ -101,25 +101,26 @@ export function toSvg(c: Content, title = ''): string {
 <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker></defs><rect x="${minX}" y="${minY}" width="${maxX - minX}" height="${maxY - minY}" fill="#fff"/>${edges}${nodes}</svg>`;
 }
 
-/** Open Group Exchange Format (ArchiMate 3.x) — model + relasi + satu view. Skema XSD tidak divalidasi di sini. */
+/**
+ * Open Group Exchange Format (ArchiMate 3.1) — model + relasi + satu view. Keluaran divalidasi terhadap XSD resmi oleh pemanggil
+ * (eaw/xsd.ts). Wadah kosong (<elements/>, <relationships/>) TIDAK sah menurut XSD, jadi dihilangkan bila tidak ada isinya.
+ */
 export function toExchangeXml(c: Content, nama: string): string {
   const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
   const id = (p: string, s: string) => `id-${p}-${s}`;
+  const block = (tag: string, lines: string[]) => (lines.length ? `  <${tag}>\n${lines.join('\n')}\n  </${tag}>\n` : '');
+  const elements = c.nodes.map((n) => `    <element identifier="${id('el', n.id)}" xsi:type="${n.type}"><name xml:lang="id">${x(n.label)}</name></element>`);
+  const relationships = c.edges.map((e) => `    <relationship identifier="${id('rel', e.id)}" source="${id('el', e.source)}" target="${id('el', e.target)}" xsi:type="${cap(e.type)}"/>`);
+  const viewItems = [
+    ...c.nodes.map((n) => `        <node identifier="${id('vn', n.id)}" elementRef="${id('el', n.id)}" xsi:type="Element" x="${n.x}" y="${n.y}" w="${NODE_W}" h="${NODE_H}"/>`),
+    ...c.edges.map((e) => `        <connection identifier="${id('vc', e.id)}" relationshipRef="${id('rel', e.id)}" xsi:type="Relationship" source="${id('vn', e.source)}" target="${id('vn', e.target)}"/>`),
+  ];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <model xmlns="http://www.opengroup.org/xsd/archimate/3.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.opengroup.org/xsd/archimate/3.0/ http://www.opengroup.org/xsd/archimate/3.1/archimate3_Diagram.xsd" identifier="id-model-saoraja">
   <name xml:lang="id">${x(nama)}</name>
-  <elements>
-${c.nodes.map((n) => `    <element identifier="${id('el', n.id)}" xsi:type="${n.type}"><name xml:lang="id">${x(n.label)}</name></element>`).join('\n')}
-  </elements>
-  <relationships>
-${c.edges.map((e) => `    <relationship identifier="${id('rel', e.id)}" source="${id('el', e.source)}" target="${id('el', e.target)}" xsi:type="${cap(e.type)}"/>`).join('\n')}
-  </relationships>
-  <views>
+${block('elements', elements)}${block('relationships', relationships)}  <views>
     <diagrams>
-      <view identifier="id-view-1" xsi:type="Diagram"><name xml:lang="id">${x(nama)}</name>
-${c.nodes.map((n) => `        <node identifier="${id('vn', n.id)}" elementRef="${id('el', n.id)}" xsi:type="Element" x="${n.x}" y="${n.y}" w="${NODE_W}" h="${NODE_H}"/>`).join('\n')}
-${c.edges.map((e) => `        <connection identifier="${id('vc', e.id)}" relationshipRef="${id('rel', e.id)}" xsi:type="Relationship" source="${id('vn', e.source)}" target="${id('vn', e.target)}"/>`).join('\n')}
-      </view>
+      <view identifier="id-view-1" xsi:type="Diagram"><name xml:lang="id">${x(nama)}</name>${viewItems.length ? '\n' + viewItems.join('\n') + '\n      ' : ''}</view>
     </diagrams>
   </views>
 </model>

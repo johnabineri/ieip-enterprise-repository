@@ -7,7 +7,7 @@
    ===================================================================== */
 (function () {
   const D = window.DB, API = window.API, CFG = window.EAP_CONFIG;
-  const SCRIPTS = ['assets/app.js?v=4', 'assets/pages-eaw.js?v=3', 'assets/pages-ops.js?v=3', 'assets/live-domains.js?v=1', 'assets/live-gov.js?v=2', 'assets/live-gse.js?v=4', 'assets/live-req.js?v=3', 'assets/live-console.js?v=1', 'assets/live-model.js?v=2', 'assets/live-lineage.js?v=1', 'assets/live-import.js?v=2'];
+  const SCRIPTS = ['assets/app.js?v=5', 'assets/pages-eaw.js?v=4', 'assets/pages-ops.js?v=4', 'assets/live-domains.js?v=3', 'assets/live-gov.js?v=4', 'assets/live-gse.js?v=8', 'assets/live-gse-ide.js?v=3', 'assets/live-req.js?v=5', 'assets/live-console.js?v=5', 'assets/live-model.js?v=3', 'assets/live-lineage.js?v=2', 'assets/live-import.js?v=7', 'assets/live-roadmap.js?v=2', 'assets/live-adr.js?v=3'];
   const loadSeq = (list) => list.reduce((p, src) => p.then(() => new Promise((ok, err) => {
     const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => err(new Error('Gagal memuat ' + src)); document.body.appendChild(s);
   })), Promise.resolve());
@@ -23,7 +23,7 @@
     'eaw.validation.approve': ['eaw.workflow.validate'], 'eaw.review.run': ['eaw.workflow.validate'],
     'eaw.baseline.approve': ['eaw.arb.approve', 'eaw.workflow.approve'], 'eaw.publication.approve': ['eaw.publish.run'],
     'gov.arb.write': ['eaw.arb.submit', 'eaw.arb.review'], 'gov.arb.approve': ['eaw.arb.approve'],
-    'eaw.adr.write': ['eaw.adr.write'], 'gse.project.read': ['gse.project.read'], 'req.session.write': ['req.session.run'], 'eaw.document.approve': ['eaw.document.approve'], 'console.dashboard.read': ['console.dashboard.read'], 'console.dashboard.write': ['console.dashboard.write'], 'console.ai.admin': ['console.ai.admin'], 'console.finops.read': ['console.finops.read'], 'console.eio.write': ['console.eio.write'], 'console.security.admin': ['console.security.admin'], 'gse.project.run': ['gse.project.run'], 'eaw.org.write': ['eaw.org.write'], 'eaw.platform.write': ['eaw.platform.write'], 'eaw.workspace.assign': ['eaw.workspace.assign'], 'eaw.reference.write': ['eaw.kra.write'],
+    'eaw.adr.write': ['eaw.adr.write'], 'gse.project.read': ['gse.project.read'], 'req.session.write': ['req.session.run'], 'eaw.document.approve': ['eaw.document.approve'], 'eaw.roadmap.write': ['eaw.roadmap.write'], 'console.dashboard.read': ['console.dashboard.read'], 'console.dashboard.write': ['console.dashboard.write'], 'console.ai.admin': ['console.ai.admin'], 'console.finops.read': ['console.finops.read'], 'console.eio.write': ['console.eio.write'], 'console.eio.run': ['console.eio.run'], 'console.security.admin': ['console.security.admin'], 'gse.project.run': ['gse.project.run'], 'eaw.org.write': ['eaw.org.write'], 'eaw.platform.write': ['eaw.platform.write'], 'eaw.workspace.assign': ['eaw.workspace.assign'], 'eaw.reference.write': ['eaw.kra.write'],
     'set.account.admin': ['set.users.admin'], 'set.audit.read': ['set.audit.read'],
   };
   const NONE = 'ROLE_EAP_NONE';
@@ -91,6 +91,7 @@
     D.RP[mine] = [...perms];
     D.USERS.forEach((u) => { const raw = (users || []).find((x) => x.id === u.sub); u.assignments = raw ? raw.assignments : []; });
     D.LIVE_USERS = !!users;
+    D.LIVE_ROLES = roles ? roles.data : null;          // respons asli /set/roles (kode izin API, bukan alias UI) — halaman set/roles live
     return { me, mine };
   }
 
@@ -116,11 +117,14 @@
     LiveDomains.install(A, { API, D, fail, entUuid });
     LiveGov.install(A, { API, D, fail, entUuid, refresh: () => refresh() });   // KRA Manager, Framework Builder, ARB, dashboard   // halaman domain D1/D2/D3/D5/D6 -> /eaw/objects
     LiveGse.install(A, { API, D, fail });   // GSE: proyek, template, flow, berkas, gerbang
+    LiveGseIde.install(A, { API, D, fail });   // GSE-05: editor kode (Monaco) + commit ke feature branch — SETELAH LiveGse (menimpa gse/ide)
     LiveReq.install(A, { API, D, fail });   // REQ: sesi elisitasi, user story, ekspor
     LiveConsole.install(A, { API, D, fail });   // CONSOLE: IKA, AI register, FinOps, EIO, observability, security
     LiveModel.install(A, { API, D, fail });   // kanvas ArchiMate + penerbit dokumen
     LiveLineage.install(A, { API, D, fail });   // lineage & impact
     LiveImport.install(A, { API, D, fail });   // impor CSV (di halaman penerbit)
+    LiveRoadmap.install(A, { API, D, fail });   // Master IT Roadmap (FR-04.1)
+    LiveAdr.install(A, { API, D, fail });   // ADR -> Git (EAW-04)
 
     // --- aplikasi ---
     const appForm = A.appForm;
@@ -171,12 +175,12 @@
       } else {
         bd.insertAdjacentHTML('beforeend', `<h3 class="mt">Penempatan workspace</h3><dl class="dl mt-s"><dt>Platform</dt><dd>${a.platform && a.platform !== '—' ? A.tag(a.platform) : '<span class="muted">belum ditempatkan</span>'}</dd><dt>Dasar</dt><dd>${a.adopsi ? 'adopsi (bebas tiket ARB)' : a.arbId ? 'tiket ARB ' + esc((D.ARB.find((t) => t.id === a.arbId) || {}).no || a.arbId.slice(0, 8)) : '<span class="muted">belum ada tiket ARB</span>'}</dd></dl>`);
         if (a.status === 'Draf' && A.can('eaw.workspace.assign')) {
-          bd.insertAdjacentHTML('beforeend', `<div class="row mt-s"><select class="select" id="plat-sel"><option value="">— lepas penempatan —</option>${D.APPS.filter((x) => x.jenisNode === 'platform').map((x) => `<option ${x.kode === a.platform ? 'selected' : ''}>${esc(x.kode)}</option>`).join('')}</select><button class="btn sm" onclick="App.placeApp('${esc(k)}')">Tempatkan</button></div>`);
+          bd.insertAdjacentHTML('beforeend', `<div class="row mt-s"><select class="select" id="plat-sel"><option value="">— lepas penempatan —</option>${D.APPS.filter((x) => x.jenisNode === 'platform').map((x) => `<option ${x.kode === a.platform ? 'selected' : ''}>${esc(x.kode)}</option>`).join('')}</select><button class="btn sm" onclick="App.placeApp(${window.jsArg(k)})">Tempatkan</button></div>`);
         }
       }
       if (a.status === 'Draf' && A.can('eaw.catalog.write')) {
-        const pub = D.KRA.filter((r) => r.status === 'Dipublikasi');
-        bd.insertAdjacentHTML('beforeend', `<h3 class="mt">Tautan KRA (syarat Divalidasi)</h3><div class="row mt-s"><select class="select" id="kra-sel"><option value="">— pilih referensi —</option>${pub.map((r) => `<option value="${r.id}" ${r.id === a.referensiId ? 'selected' : ''}>${esc(r.kode)} · ${esc(r.nama)}</option>`).join('')}</select><button class="btn sm" onclick="App.linkKra('${esc(k)}')">Tautkan</button></div>`);
+        const pub = D.KRA.filter((r) => r.domain === 'aplikasi' && (r.status === 'Ditetapkan' || r.status === 'Dipublikasi'));   // 296: se-domain & berlaku
+        bd.insertAdjacentHTML('beforeend', `<h3 class="mt">Tautan KRA (syarat Divalidasi)</h3><div class="row mt-s"><select class="select" id="kra-sel"><option value="">— pilih referensi —</option>${pub.map((r) => `<option value="${esc(r.id)}" ${r.id === a.referensiId ? 'selected' : ''}>${esc(r.kode)} · ${esc(r.nama)}</option>`).join('')}</select><button class="btn sm" onclick="App.linkKra(${window.jsArg(k)})">Tautkan</button></div>`);
       }
     };
     A.placeApp = async (k) => {
@@ -209,7 +213,7 @@
       if (!D.LIVE_USERS) return { html: pageHd('Manajemen Akun Pengguna', 'Daftar akun memerlukan izin <code>set.account.read</code> (Auditor/SysAdmin).') + card('', '<div class="empty"><div class="big">🔒</div>Peran Anda tidak dapat melihat daftar akun (403 dari API).</div>') };
       const adm = A.can('set.users.admin');
       const rows = D.USERS;
-      const assign = (u) => (u.assignments.length ? u.assignments.map((x) => `<div class="row small" style="gap:6px"><span>${esc(roleName(x.roleCode))}</span>${x.entityScope ? tag(x.entityScope) : '<span class="tiny muted">Holding-wide</span>'}${x.validUntil ? `<span class="tiny muted">s/d ${esc(String(x.validUntil).slice(0, 10))}</span>` : ''}${adm ? `<button class="btn sm ghost" title="Cabut" onclick="App.revokeRole('${esc(x.id)}')">✕</button>` : ''}</div>`).join('') : '<span class="small muted">Belum ada peran</span>');
+      const assign = (u) => (u.assignments.length ? u.assignments.map((x) => `<div class="row small" style="gap:6px"><span>${esc(roleName(x.roleCode))}</span>${x.entityScope ? tag(x.entityScope) : '<span class="tiny muted">Holding-wide</span>'}${x.validUntil ? `<span class="tiny muted">s/d ${esc(String(x.validUntil).slice(0, 10))}</span>` : ''}${adm ? `<button class="btn sm ghost" title="Cabut" onclick="App.revokeRole(${window.jsArg(x.id)})">✕</button>` : ''}</div>`).join('') : '<span class="small muted">Belum ada peran</span>');
       return { html: pageHd('Manajemen Akun Pengguna', 'Akun dibuat otomatis saat login pertama (JIT, tanpa peran). Hanya <code>idp_subject</code> + tautan CMP yang disimpan — 0 kolom PII (D-14); nama tampilan dari <code>ref.users</code>. Penugasan berlaku segera.',
         A.lockBtn('set.users.admin', '+ Tugaskan Peran', 'App.assignRole()', 'btn pri')) +
         `<div class="grid g4 mb">${kpi('Akun aktif', rows.filter((u) => u.active).length)}${kpi('Tanpa peran', rows.filter((u) => !u.assignments.length).length, { tgt: 'menunggu penugasan admin' })}${kpi('Kolom PII di set.users', '0', { tgt: 'NFR-09 · pii-guard' })}${kpi('Token', 'RS256', { tgt: 'exp ≤ 1 jam · D-13' })}</div>` +
@@ -218,8 +222,111 @@
           { h: 'Peran & lingkup', v: assign },
           { h: 'Login terakhir', v: (u) => `<span class="small mono">${esc(u.last || '—')}</span>` },
           { h: 'Status', v: (u) => (u.active ? pill('aktif', 'b-ok') : pill('nonaktif', '')) },
-          { h: '', v: (u) => A.lockBtn('set.users.admin', u.active ? 'Nonaktifkan' : 'Aktifkan', `App.toggleUser('${esc(u.uname)}')`, 'btn sm') }], rows) + '</div>', { flush: true }) };
+          { h: '', v: (u) => A.lockBtn('set.users.admin', u.active ? 'Nonaktifkan' : 'Aktifkan', `App.toggleUser(${window.jsArg(u.uname)})`, 'btn sm') }], rows) + '</div>', { flush: true }) +
+        card('Sinkron mutasi pegawai (CMP → RBAC EAP)', '<div id="rbac-sync"><div class="small muted">Memuat…</div></div>',
+          { cls: 'mt', flush: true, meta: 'CMP SRS §8.3 · hak dicabut otomatis, penugasan ulang oleh admin', acts: '<label class="tiny row" style="gap:4px"><input type="checkbox" id="rbac-all" onchange="App.rbacSyncLoad()">semua event</label>' }),
+        mount: () => A.rbacSyncLoad() };
     };
+    // jejak sinkron mutasi pegawai (worker infra/services/rbac-sync). Default: hanya event yang mengubah hak (dicabut/nonaktif).
+    const RBAC_ACT = { deactivated: ['akun dinonaktifkan', 'b-err'], revoked_scope: ['lingkup dicabut', 'b-warn'], no_account: ['tanpa akun EAP', ''], none: ['tanpa perubahan', ''], stale: ['versi usang', ''], ignored: ['diabaikan', ''] };
+    A.rbacSyncLoad = async () => {
+      const box = document.getElementById('rbac-sync'); if (!box) return;
+      const all = document.getElementById('rbac-all'); const q = all && all.checked ? {} : { action: 'deactivated,revoked_scope' };
+      let r; try { r = await API.get('/api/v1/set/rbac-sync', { ...q, limit: 25 }); } catch (err) { box.innerHTML = `<div class="callout err"><span class="ic">✕</span><div>${esc(API.explain(err))}</div></div>`; return; }
+      if (!r.data.length) { box.innerHTML = `<div class="empty small">${q.action ? 'Belum ada hak yang dicabut oleh mutasi pegawai.' : 'Belum ada event mutasi pegawai yang diterima.'}</div>`; return; }
+      box.innerHTML = table([
+        { h: 'Waktu', v: (e) => `<span class="small mono">${esc(String(e.receivedAt).slice(0, 19).replace('T', ' '))}</span>` },
+        { h: 'Hasil', v: (e) => pill((RBAC_ACT[e.action] || [e.action])[0], (RBAC_ACT[e.action] || [])[1] || '') },
+        { h: 'Event', v: (e) => `<span class="tiny mono">${esc(e.eventType.replace('cmp.workforce.', ''))}</span><div class="tiny faint">${esc(e.sourceEventId)} · v${esc(e.rowVersion ?? '-')}</div>` },
+        { h: 'Penugasan dicabut', v: (e) => (e.revoked.length ? e.revoked.map((x) => `<div class="row small" style="gap:6px"><b>${esc(x.username || x.userId.slice(0, 8))}</b><span>${esc(roleName(x.roleCode))}</span>${x.entityScope ? tag(x.entityScope) : '<span class="tiny muted">Holding-wide</span>'}</div>`).join('') : '<span class="small muted">—</span>') },
+        { h: 'Alasan', v: (e) => `<span class="small">${esc(e.reason || '')}</span>` }], r.data);
+    };
+    // --- SET: Roles & Permissions — matriks izin NYATA (kode izin API), RACI TURUNAN dari izin, daftar peran ---
+    // RACI PRD §13.2 memuat "Consulted" yang tidak dapat diturunkan dari izin: di mode live C tidak ditampilkan (dinyatakan).
+    // A = peran memegang izin gerbang persetujuan fitur; R = izin tulis/jalankan/admin; I = hanya baca; R* = R berlingkup entitas.
+    const RACI_FEATURES = [
+      ['Objek arsitektur 6 domain (D1–D6)', { A: ['eaw.baseline.approve'], R: ['eaw.model.write', 'eaw.validation.approve'], I: ['eaw.model.read'] }],
+      ['Katalog aplikasi, platform & workspace (D4)', { A: ['eaw.baseline.approve'], R: ['eaw.catalog.write', 'eaw.platform.write', 'eaw.workspace.assign', 'eaw.validation.approve'], I: ['eaw.catalog.read'] }],
+      ['KRA (referensi arsitektur)', { A: ['eaw.baseline.approve'], R: ['eaw.reference.write'], I: ['eaw.reference.read'] }],
+      ['Tiket & putusan ARB', { A: ['gov.arb.approve'], R: ['gov.arb.write'], I: ['gov.arb.read'] }],
+      ['ADR', { R: ['eaw.adr.write'], I: ['eaw.adr.read'] }],
+      ['Reviu objek (Direviu → Draf)', { R: ['eaw.review.run'], I: ['eaw.workflow.read'] }],
+      ['Penerbitan dokumen arsitektur', { A: ['eaw.document.approve'], R: ['eaw.publication.approve'], I: ['eaw.model.read'] }],
+      ['Master IT Roadmap', { R: ['eaw.roadmap.write'], I: ['eaw.catalog.read'] }],
+      ['Struktur organisasi, KAF & IKA', { R: ['eaw.org.write'], I: ['eaw.org.read'] }],
+      ['Scaffolding proyek (GSE)', { R: ['gse.project.run'], I: ['gse.project.read'] }],
+      ['Elisitasi kebutuhan (REQ)', { R: ['req.session.write'] }],
+      ['AI register, guardrail & kill-switch', { R: ['console.ai.admin', 'console.security.admin'], I: ['console.dashboard.read'] }],
+      ['Konektor, model kanonikal & rute EIO', { R: ['console.eio.write'], I: ['console.dashboard.read'] }],
+      ['Mediasi EIO (data plane)', { R: ['console.eio.run'], I: ['console.dashboard.read'] }],
+      ['FinOps', { I: ['console.finops.read'] }],
+      ['Akun & penugasan peran', { R: ['set.account.admin'], I: ['set.account.read'] }],
+      ['Audit trail', { I: ['set.audit.read'] }],
+    ];
+    const raciCell = (role, f) => {
+      const has = (codes) => (codes || []).some((c) => role.permissions.includes(c));
+      if (has(f.A)) return 'A';
+      if (has(f.R)) return role.editScope === 'entity' ? 'R*' : 'R';
+      if (has(f.I)) return 'I';
+      return '-';
+    };
+    const short = (code) => code.replace(/^ROLE_EAP_/, '').split('_').map((w) => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+    A.PAGES['set/roles'] = () => {
+      const R = D.LIVE_ROLES;
+      if (!R) return { html: pageHd('Matriks Roles & Permissions', 'Katalog peran memerlukan izin <code>eaw.org.read</code>.') + card('', '<div class="empty"><div class="big">🔒</div>Peran Anda tidak dapat membaca katalog peran (403 dari API).</div>') };
+      const roles = R.filter((r) => r.isActive);
+      const perms = [...new Set(roles.flatMap((r) => r.permissions))].sort();
+      const users = (code) => (D.LIVE_USERS ? D.USERS.filter((u) => (u.assignments || []).some((a) => a.roleCode === code)).length : null);
+      const t = A.TABSTATE.roles || 'matrix';
+      const cls = (v) => (v === 'A' ? 'm-A' : v.startsWith('R') ? 'm-R' : v === 'I' ? 'm-I' : '');
+      const body = t === 'matrix'
+        ? card(`Matriks Peran × Izin (${perms.length} izin nyata dari <code>set.role_permissions</code>)`, `<div class="tbl-wrap"><table class="tbl matrix"><thead><tr><th>Peran</th>${perms.map((p) => `<th style="writing-mode:vertical-rl;transform:rotate(180deg);height:170px;font-family:var(--mono);text-transform:none;letter-spacing:0">${esc(p)}</th>`).join('')}</tr></thead><tbody>${roles.map((r) => `<tr ${r.roleCode === A.S.role ? 'style="background:var(--accent-soft)"' : ''}><td><b class="small">${esc(r.roleName)}</b><div class="tiny mono faint">${esc(r.roleCode)}</div></td>${perms.map((p) => `<td class="c">${r.permissions.includes(p) ? '<span class="perm-y">●</span>' : '<span class="perm-n">·</span>'}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`,
+          { flush: true, meta: 'baris disorot = peran aktif Anda · ditegakkan DB (RLS + trigger admin-only)' })
+        : t === 'raci'
+          ? card('RACI turunan dari izin nyata', `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Fitur / Modul</th>${roles.map((r) => `<th class="c" title="${esc(r.roleName)}" style="writing-mode:vertical-rl;transform:rotate(180deg);height:150px;text-transform:none">${esc(short(r.roleCode))}</th>`).join('')}</tr></thead><tbody>${RACI_FEATURES.map(([nama, f]) => `<tr><td><b class="small">${esc(nama)}</b><div class="tiny mono faint">${esc([...(f.A || []), ...(f.R || []), ...(f.I || [])].join(' · '))}</div></td>${roles.map((r) => { const v = raciCell(r, f); return `<td class="c"><span class="${cls(v)}" style="display:inline-block;min-width:30px;padding:2px 6px;border-radius:4px">${v}</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+              <div class="callout info mt-s" style="margin:10px 14px"><span class="ic">ℹ</span><div class="small"><b>A</b> = memegang izin gerbang persetujuan fitur · <b>R</b> = izin tulis/jalankan/admin · <b>R*</b> = R berlingkup entitas penugasan · <b>I</b> = hanya baca · <b>-</b> = tanpa akses. <b>C (Consulted)</b> pada RACI PRD §13.2 adalah peran proses, bukan izin sistem, sehingga tidak dapat diturunkan dan tidak ditampilkan. Fitur tanpa izin persetujuan (mis. ADR, Roadmap) tidak punya kolom A.</div></div>`,
+            { flush: true, meta: 'dihitung dari /api/v1/set/roles — berubah otomatis saat izin peran diubah' })
+          : `<div class="grid g3">${roles.map((r) => { const n = users(r.roleCode); return card(esc(r.roleName), `<div class="row">${tag(r.roleCode)}</div><div class="small muted mt-s">${esc(r.description || '')}</div><div class="row mt-s">${pill(r.tier, r.tier.startsWith('T1') ? 'b-gold' : r.tier.startsWith('T2') ? 'b-info' : r.tier.startsWith('T3') ? 'b-ok' : 'b-vio')}${r.canViewAll ? pill('lihat semua', 'b-info') : ''}${pill('susun: ' + r.editScope, '')}<span class="small muted right">${r.permissions.length} izin${n === null ? '' : ` · ${n} pengguna`}</span></div>`); }).join('')}</div>`;
+      return { html: pageHd('Matriks Roles & Permissions', `${roles.length} peran aktif dengan izin granular <code>&lt;workspace&gt;.&lt;modul&gt;.&lt;aksi&gt;</code> (SET-03), dibaca langsung dari skema <code>set</code>. Skema <code>set</code> seragam di seluruh platform holding (D-12).`) +
+        A.tabs('roles', [['matrix', 'Matriks Izin'], ['raci', 'RACI (turunan)'], ['list', `${roles.length} Peran`]], t) + body };
+    };
+
+    // --- SET: API Client, Secrets & Service Tokens — laporan BACA-SAJA dari konfigurasi nyata API (GET /api/v1/set/integrations) ---
+    A.PAGES['set/api'] = () => ({
+      html: pageHd('API Client, Secrets & Service Tokens', 'Konfigurasi nyata yang dipakai API EAP: verifikasi token, konektor eksternal, keberadaan rahasia (nilai tidak pernah ditampilkan), dan identitas layanan ke database. Halaman ini baca-saja — pengubahan dilakukan lewat konfigurasi penerapan (env/Secret) dan Keycloak.') +
+        '<div id="set-api"><div class="small muted">Memuat…</div></div>',
+      mount: async () => {
+        const box = document.getElementById('set-api'); if (!box) return;
+        let r; try { r = await API.get('/api/v1/set/integrations'); }
+        catch (err) { box.innerHTML = err && err.status === 403 ? card('', '<div class="empty"><div class="big">🔒</div>Memerlukan izin <code>set.account.read</code> (Auditor/SysAdmin).</div>') : `<div class="callout err"><span class="ic">✕</span><div>${esc(API.explain(err))}</div></div>`; return; }
+        const yes = (b, t = 'ya', f = 'tidak') => (b ? pill(t, 'b-ok') : pill(f, ''));
+        const code = (v) => (v ? `<code class="tiny">${esc(v)}</code>` : '<span class="small muted">—</span>');
+        const dl = (rows) => `<dl class="dl" style="grid-template-columns:120px minmax(0,1fr);overflow-wrap:anywhere">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+        const a = r.auth; const spa = (window.EAP_CONFIG && window.EAP_CONFIG.oidcClientId) || 'eap-spa';
+        const clients = [{ clientId: spa, kind: 'publik (SPA)', flow: 'Authorization Code + PKCE S256', source: 'konfigurasi UI' },
+          ...r.clients.map((c) => ({ clientId: c.clientId, kind: 'resource server (bearer-only)', flow: 'menerima token dengan aud ini', source: c.source }))];
+        const detail = (c) => Object.entries(c.detail || {}).filter(([, v]) => v !== null && v !== undefined && !(Array.isArray(v) && !v.length))
+          .map(([k, v]) => `<span class="tiny muted">${esc(k)}</span> ${typeof v === 'boolean' ? yes(v) : code(Array.isArray(v) ? v.join(', ') : String(v))}`).join(' &nbsp; ');
+        box.innerHTML =
+          `<div class="grid g4 mb">${kpi('Verifikasi token', a.mode === 'jwks' ? 'JWKS' : 'HS256 dev', { tgt: a.algorithms.join(' / ') })}${kpi('Kunci JWKS', a.jwks.reachable ? a.jwks.keys.length : '—', { tgt: a.jwks.reachable ? `terjangkau · ${a.jwks.ms} ms` : esc(a.jwks.error || 'tidak terjangkau') })}${kpi('Konektor aktif', `${r.connectors.filter((c) => c.configured).length}/${r.connectors.length}`)}${kpi('Rahasia terisi', `${r.secrets.items.filter((s) => s.set).length}/${r.secrets.items.length}`, { tgt: 'nilai tidak ditampilkan' })}</div>` +
+          `<div class="grid g2">${card('Verifikasi token (D-13)', dl([
+            ['Mode', a.mode === 'jwks' ? pill('JWKS (RS256/ES256)', 'b-ok') : pill('HS256 — hanya dev/uji', 'b-warn')],
+            ['Issuer', code(a.issuer)], ['Audiens', code(a.audience)], ['JWKS', code(a.jwksUri)],
+            ['Klaim wajib', a.requiredClaims.map((c) => tag(c)).join(' ')], ['Masa berlaku maks.', `${a.maxTokenLifetimeSeconds / 60} menit`],
+            ['Lingkungan', r.production ? pill('produksi', 'b-info') : pill('non-produksi', '')]]))}
+          ${card('Kunci publik JWKS', a.jwks.keys.length ? table([{ h: 'kid', v: (k) => `<span class="mono tiny" title="${esc(k.kid || '')}">${esc(k.kid ? (k.kid.length > 14 ? k.kid.slice(0, 12) + '…' : k.kid) : '—')}</span>` }, { h: 'kty', v: (k) => esc(k.kty || '—') }, { h: 'alg', v: (k) => esc(k.alg || '—') }, { h: 'use', v: (k) => esc(k.use || '—') }], a.jwks.keys)
+            : `<div class="empty small">${esc(a.jwks.error || 'Tidak ada kunci')}</div>`, { flush: true, meta: 'rotasi kunci dikelola Keycloak; API mengambil ulang JWKS otomatis' })}</div>` +
+          card('Klien OIDC', table([{ h: 'client_id', v: (c) => `<b class="mono">${esc(c.clientId)}</b>` }, { h: 'Jenis', v: (c) => esc(c.kind) }, { h: 'Alur', v: (c) => esc(c.flow) }, { h: 'Sumber', v: (c) => `<span class="small muted">${esc(c.source)}</span>` }], clients),
+            { flush: true, cls: 'mt', meta: 'API tidak memegang kredensial admin Keycloak — daftar lengkap klien ada di konsol Keycloak' }) +
+          card('Konektor eksternal', table([{ h: 'Konektor', v: (c) => `<b class="small">${esc(c.name)}</b>` }, { h: 'Status', v: (c) => yes(c.configured, 'terkonfigurasi', 'nonaktif') }, { h: 'Detail', v: detail }], r.connectors),
+            { flush: true, cls: 'mt', meta: `dibaca dari layanan ${esc(r.service)} · konfigurasi dibagikan ke semua layanan EAP` }) +
+          `<div class="grid g2 mt">${card('Rahasia', table([{ h: 'Variabel', v: (s) => `<code>${esc(s.name)}</code>${s.note ? `<div class="tiny muted">${esc(s.note)}</div>` : ''}` }, { h: 'Terisi', v: (s) => yes(s.set) }, { h: 'Dipakai oleh', v: (s) => `<span class="small">${esc(s.consumer)}</span>` }], r.secrets.items),
+            { flush: true, meta: `sumber: ${r.secrets.vault ? 'Vault' : 'env (Compose .env / Secret K8s) — Vault belum diintegrasikan'}` })}
+          ${card('Identitas layanan ke database', `<div class="small" style="padding:10px 14px 4px">${esc(r.workloadIdentity.model)}.${r.workloadIdentity.spiffe ? '' : ' <span class="muted">SPIFFE/SPIRE belum ada.</span>'}</div>` +
+            table([{ h: 'Login', v: (l) => `<span class="mono">${esc(l.login)}</span>${l.login === r.workloadIdentity.session ? ' ' + pill('sesi ini', 'b-info') : ''}` }, { h: 'Anggota', v: (l) => l.memberOf.map((m) => tag(m)).join(' ') || '—' }, { h: 'Batas koneksi', v: (l) => (l.connectionLimit < 0 ? '∞' : esc(l.connectionLimit)) }], r.workloadIdentity.logins),
+            { flush: true })}</div>`;
+      },
+    });
     A.toggleUser = async (name) => {
       const u = D.USERS.find((x) => x.uname === name);
       try { await API.patch(`/api/v1/set/users/${u.sub}`, { isActive: !u.active }); A.toast('Akun diperbarui', `${esc(name)} → ${u.active ? 'nonaktif' : 'aktif'}`, 'success'); await refresh(); } catch (err) { fail(err); }
@@ -264,15 +371,15 @@
       const editable = a.status === 'Draf' && A.can('eaw.model.write');
       bd.insertAdjacentHTML('beforeend', `<h3 class="mt">Relasi ArchiMate (${rels.length})</h3><div class="stack small mt-s">${rels.length ? rels.map((r) => {
         const out = r.sumberId === a.id; const other = out ? r.targetLabel || r.targetType : r.sumberLabel || r.sumberType;
-        return `<div class="row"><span class="tag">${esc(r.tipe)}</span><span>${out ? '→' : '←'}</span><span style="flex:1">${esc(other)}</span><span class="tiny muted">${esc(out ? r.targetType : r.sumberType)}</span>${editable && out ? `<button class="btn sm ghost" title="Hapus relasi" onclick="App.relDel('${esc(r.id)}','${esc(k)}')">✕</button>` : ''}</div>`;
-      }).join('') : '<span class="muted">Belum ada relasi.</span>'}</div>${editable ? `<div class="row mt-s">${Object.entries(TT).filter(([t]) => t !== 'application').map(([t, v]) => `<button class="btn sm" onclick="App.relForm('${esc(k)}','${t}')">+ ${v[0]}</button>`).join('')}</div>` : ''}`);
+        return `<div class="row"><span class="tag">${esc(r.tipe)}</span><span>${out ? '→' : '←'}</span><span style="flex:1">${esc(other)}</span><span class="tiny muted">${esc(out ? r.targetType : r.sumberType)}</span>${editable && out ? `<button class="btn sm ghost" title="Hapus relasi" onclick="App.relDel(${window.jsArg(r.id)},${window.jsArg(k)})">✕</button>` : ''}</div>`;
+      }).join('') : '<span class="muted">Belum ada relasi.</span>'}</div>${editable ? `<div class="row mt-s">${Object.entries(TT).filter(([t]) => t !== 'application').map(([t, v]) => `<button class="btn sm" onclick="App.relForm(${window.jsArg(k)},${window.jsArg(t)})">+ ${v[0]}</button>`).join('')}</div>` : ''}`);
     };
     A.relDel = async (id, k) => { try { await API.del(`/api/v1/eaw/relations/${id}`); A.toast('Relasi dihapus', '', 'success'); await refresh(() => A.appDetail(k)); } catch (err) { fail(err); } };
     A.relForm = async (k, tt) => {
       const a = D.APPS.find((x) => x.kode === k); const [label, path, tipes] = TT[tt];
       let items = []; try { items = (await API.all(`/api/v1/eaw/objects/${path}`)).map((o) => ({ id: o.id, name: o.nama || o.namaKanonikal || o.aspek || o.layananUtama })); } catch (e) { /* tanpa izin baca */ }
       A.openModal(`<div class="drawer-hd"><h2>Hubungkan ${esc(a.kode)} → ${esc(label)}</h2><button class="x" onclick="App.closeAll()">×</button></div>
-        <form class="drawer-bd" id="rel-form" onsubmit="App.relSave(event,'${esc(k)}','${tt}')"><div class="form-grid">
+        <form class="drawer-bd" id="rel-form" onsubmit="App.relSave(event,${window.jsArg(k)},${window.jsArg(tt)})"><div class="form-grid">
           <div class="field"><label>Tipe relasi</label><select class="select" name="tipe">${tipes.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div>
           <div class="field"><label>${esc(label)} yang ada</label><select class="select" name="targetId"><option value="">— pilih —</option>${items.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select></div>
           <div class="field full"><label>…atau buat ${esc(label)} baru (isi nama; atribut lain dilengkapi di API/halaman domain)</label><input class="input" name="baru" placeholder="nama ${esc(label.toLowerCase())}"></div></div><div id="rel-err" class="mt"></div></form>

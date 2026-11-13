@@ -4,18 +4,21 @@
 BEGIN;
 \ir _helpers.sql
 DO $$
-DECLARE kra uuid; a uuid; s uuid; p uuid; d uuid; i uuid; c uuid; f uuid; r uuid; msg text; n int;
+DECLARE kra uuid; k_svc uuid; k_prc uuid; k_dat uuid; k_inf uuid; k_ctl uuid; a uuid; s uuid; p uuid; d uuid; i uuid; c uuid; f uuid; r uuid; msg text; n int;
 BEGIN
     PERFORM pg_temp.fx_world();
-    kra := pg_temp.fx_kra('KRA-REL');
+    kra := pg_temp.fx_kra('KRA-REL');                                   -- domain aplikasi
+    -- 296: KRA wajib se-domain dengan objeknya
+    k_svc := pg_temp.fx_kra('KRA-REL-SVC', 'layanan'); k_prc := pg_temp.fx_kra('KRA-REL-PRC', 'proses_bisnis'); k_dat := pg_temp.fx_kra('KRA-REL-DAT', 'data');
+    k_inf := pg_temp.fx_kra('KRA-REL-INF', 'infrastruktur'); k_ctl := pg_temp.fx_kra('KRA-REL-CTL', 'keamanan');
 
     -- objek disusun SBU Aspal (cakupannya)
     PERFORM pg_temp.as_user(pg_temp.fx('u_sbu_a'));
-    INSERT INTO eaw.service (nama, tipe, kategori, entity_id, referensi_id) VALUES ('Layanan Aspal', 'internal', 'utama', pg_temp.fx('aspal'), kra) RETURNING id INTO s;
-    INSERT INTO eaw.process (nama, level, entity_id, referensi_id) VALUES ('Produksi Aspal', 1, pg_temp.fx('aspal'), kra) RETURNING id INTO p;
-    INSERT INTO eaw.data_entity (nama_kanonikal, klasifikasi, entity_id, referensi_id) VALUES ('Order Aspal', 'internal', pg_temp.fx('aspal'), kra) RETURNING id INTO d;
-    INSERT INTO eaw.infra_asset (nama, tipe, entity_id, referensi_id) VALUES ('K8s Aspal', 'klaster-k8s', pg_temp.fx('aspal'), kra) RETURNING id INTO i;
-    INSERT INTO eaw.control (aspek, status_penerapan, entity_id, referensi_id) VALUES ('kerahasiaan', 'sebagian', pg_temp.fx('aspal'), kra) RETURNING id INTO c;
+    INSERT INTO eaw.service (nama, tipe, kategori, entity_id, referensi_id) VALUES ('Layanan Aspal', 'internal', 'utama', pg_temp.fx('aspal'), k_svc) RETURNING id INTO s;
+    INSERT INTO eaw.process (nama, level, entity_id, referensi_id) VALUES ('Produksi Aspal', 1, pg_temp.fx('aspal'), k_prc) RETURNING id INTO p;
+    INSERT INTO eaw.data_entity (nama_kanonikal, klasifikasi, entity_id, referensi_id) VALUES ('Order Aspal', 'internal', pg_temp.fx('aspal'), k_dat) RETURNING id INTO d;
+    INSERT INTO eaw.infra_asset (nama, tipe, entity_id, referensi_id) VALUES ('K8s Aspal', 'klaster-k8s', pg_temp.fx('aspal'), k_inf) RETURNING id INTO i;
+    INSERT INTO eaw.control (aspek, status_penerapan, entity_id, referensi_id) VALUES ('kerahasiaan', 'sebagian', pg_temp.fx('aspal'), k_ctl) RETURNING id INTO c;
     PERFORM pg_temp.as_user(pg_temp.fx('u_app'));        -- platform dibentuk Application Architect
     INSERT INTO eaw.application (kode, nama, jenis, owner_bisnis, owner_teknis, risiko_ai, slo, ui_standard, tech_stack, referensi_id, entity_id)
     VALUES ('REL-APP', 'Aplikasi Relasi', 'umum', 'b', 't', 'low', 's', 'ui', 'stack', kra, pg_temp.fx('aspal')) RETURNING id INTO a;

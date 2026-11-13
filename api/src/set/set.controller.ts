@@ -81,6 +81,37 @@ export class SetController {
     });
   }
 
+  /**
+   * Jejak sinkron mutasi pegawai CMP → RBAC EAP (CMP SRS §8.3; worker infra/services/rbac-sync, 291_rbac_sync.sql). Pencabutan otomatis
+   * TIDAK diikuti pemberian otomatis: daftar ini yang dipakai admin untuk menugaskan ulang. Hanya pengenal + username (ref.users).
+   */
+  @Get('rbac-sync') @RequirePermission('set.account.read')
+  rbacSync(@CurrentUser() p: Principal, @Query() q: Record<string, string>) {
+    const limit = pageLimit(q.limit);
+    return this.db.tx(p, async (c) => {
+      const a: unknown[] = []; const w: string[] = ['true'];
+      if (q.action) { a.push(String(q.action).split(',').slice(0, 6)); w.push(`e.action = ANY ($${a.length}::text[])`); }
+      if (q.cursor) { const id = Number(q.cursor); if (Number.isSafeInteger(id) && id > 0) { a.push(id); w.push(`e.id < $${a.length}`); } }
+      a.push(limit + 1);
+      const rows = (await c.query(
+        `SELECT e.id, e.received_at, e.source_event_id, e.event_type, e.aggregate_type, e.aggregate_id, e.row_version, e.action,
+                e.users_affected, e.roles_revoked, e.detail->>'reason' AS reason,
+                COALESCE((SELECT jsonb_agg(jsonb_build_object('userId', x->>'user_id', 'username', ru.username, 'roleCode', x->>'role_code', 'entityScope', x->>'entity_scope')
+                                           ORDER BY ru.username, x->>'role_code')
+                            FROM jsonb_array_elements(COALESCE(e.detail->'revoked', '[]')) x
+                            LEFT JOIN set.users su ON su.id = (x->>'user_id')::uuid
+                            LEFT JOIN ref.users ru ON ru.id = su.cmp_user_id), '[]') AS revoked
+           FROM set.rbac_sync_event e WHERE ${w.join(' AND ')} ORDER BY e.id DESC LIMIT $${a.length}`, a)).rows;
+      const more = rows.length > limit; const page = more ? rows.slice(0, limit) : rows;
+      return {
+        data: page.map((r) => ({ id: Number(r.id), receivedAt: r.received_at, sourceEventId: r.source_event_id, eventType: r.event_type,
+          aggregateType: r.aggregate_type, aggregateId: r.aggregate_id, rowVersion: r.row_version, action: r.action,
+          usersAffected: r.users_affected, rolesRevoked: r.roles_revoked, reason: r.reason, revoked: r.revoked })),
+        nextCursor: more ? String(page[page.length - 1].id) : null,
+      };
+    });
+  }
+
   /** Mencabut penugasan (hapus lunak; jejak tetap di audit_logs). */
   @Delete('user-roles/:id') @HttpCode(204) @RequirePermission('set.account.admin')
   revoke(@CurrentUser() p: Principal, @Param('id') id: string) {

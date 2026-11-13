@@ -47,7 +47,7 @@ window.LiveDomains = (function () {
       return A.card(`Hierarki Proses (${items.length})`, A.table([
         { h: 'Proses', v: (p) => `<span style="padding-left:${p.depth * 18}px"><span class="lvl tiny mono muted">L${p.level}</span> <b>${esc(p.nama)}</b></span>` },
         { h: 'Pemilik (jabatan)', v: (p) => esc(p.pemilikJabatan || '—') }, { h: 'Entitas', v: (p) => esc(p.entityCode) }, { h: 'KRA', v: kraTag }, { h: 'Status', v: (p) => A.badge(p.status) }],
-        flat, { click: (p) => `App.domOpen('proses','${p.id}')` }), { flush: true });
+        flat, { click: (p) => `App.domOpen('proses',${window.jsArg(p.id)})` }), { flush: true });
     },
     data(items) {
       const kls = { publik: 'b-ok', internal: 'b-info', terbatas: 'b-warn', rahasia: 'b-err' };
@@ -55,25 +55,25 @@ window.LiveDomains = (function () {
         { h: 'Entitas Kanonikal', v: (o) => `<b>${esc(o.namaKanonikal)}</b>` }, { h: 'Klasifikasi', v: (o) => A.pill(o.klasifikasi, kls[o.klasifikasi]) }, { h: 'PII', v: (o) => (o.pii ? '<b style="color:var(--err)">Ya</b>' : 'Tidak') },
         { h: 'Steward', v: (o) => esc(o.steward || '—') }, { h: 'Sumber Otoritatif', v: (o) => (o.sumberOtoritatif ? `<code>${esc(o.sumberOtoritatif)}</code>` : '—') },
         { h: 'Retensi', num: 1, v: (o) => (o.retensiHari ? o.retensiHari + ' hr' : '—') }, { h: 'KRA', v: kraTag }, { h: 'Status', v: (o) => A.badge(o.status) }],
-        items, { click: (o) => `App.domOpen('data','${o.id}')` }), { flush: true });
+        items, { click: (o) => `App.domOpen('data',${window.jsArg(o.id)})` }), { flush: true });
     },
     layanan(items) {
       const f = cache._svc || 'all'; const rows = items.filter((s) => f === 'all' || s.tipe === f);
-      return A.card('', `<div class="toolbar"><div class="chips">${[['all', 'Semua'], ['internal', 'Internal Korporat'], ['pelanggan-mitra', 'Pelanggan & Mitra']].map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" onclick="App.domSvc('${k}')">${l}</button>`).join('')}</div><span class="right small muted">${rows.length} layanan</span></div>` +
+      return A.card('', `<div class="toolbar"><div class="chips">${[['all', 'Semua'], ['internal', 'Internal Korporat'], ['pelanggan-mitra', 'Pelanggan & Mitra']].map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" onclick="App.domSvc(${window.jsArg(k)})">${l}</button>`).join('')}</div><span class="right small muted">${rows.length} layanan</span></div>` +
         A.table([{ h: 'Layanan', v: (s) => `<b>${esc(s.nama)}</b><div class="tiny muted">${esc(s.pemilik || '')}</div>` }, { h: 'Tipe', v: (s) => A.pill(s.tipe === 'internal' ? 'Internal' : 'Pelanggan & Mitra', s.tipe === 'internal' ? 'b-info' : 'b-gold') },
-          { h: 'Kategori', v: (s) => esc(s.kategori) }, { h: 'Kanal', v: (s) => esc(s.kanal || '—') }, { h: 'SLO', v: (s) => esc(s.slo || '—') }, { h: 'KRA', v: kraTag }, { h: 'Status', v: (s) => A.badge(s.status) }], rows, { click: (s) => `App.domOpen('layanan','${s.id}')` }), { flush: true });
+          { h: 'Kategori', v: (s) => esc(s.kategori) }, { h: 'Kanal', v: (s) => esc(s.kanal || '—') }, { h: 'SLO', v: (s) => esc(s.slo || '—') }, { h: 'KRA', v: kraTag }, { h: 'Status', v: (s) => A.badge(s.status) }], rows, { click: (s) => `App.domOpen('layanan',${window.jsArg(s.id)})` }), { flush: true });
     },
     infra(items) {
       const icon = { 'klaster-k8s': '☸', 'klaster-db': '⛁', gpu: '▣', jaringan: '⇄', cloud: '☁', 'dc-fisik': '▤' };
       if (!items.length) return A.card('', '<div class="empty"><div class="big">∅</div>Belum ada aset infrastruktur. Tambahkan lewat tombol di atas (Zero Pre-Seed).</div>');
-      return `<div class="grid g3">${items.map((i) => A.card(`${icon[i.tipe] || ''} ${esc(i.nama)}`, `<dl class="dl" style="grid-template-columns:90px 1fr;font-size:12.5px"><dt>Tipe</dt><dd>${A.tag(i.tipe)}</dd><dt>Lokasi</dt><dd>${esc(i.lokasi || '—')}</dd><dt>Kapasitas</dt><dd>${esc(i.kapasitas || '—')}</dd><dt>DR Tier</dt><dd>${esc(i.drTier || '—')}</dd><dt>KRA</dt><dd>${kraTag(i)}</dd></dl><div class="row mt-s"><button class="btn sm" onclick="App.domOpen('infra','${i.id}')">Detail</button></div>`, { acts: A.badge(i.status) })).join('')}</div>`;
+      return `<div class="grid g3">${items.map((i) => A.card(`${icon[i.tipe] || ''} ${esc(i.nama)}`, `<dl class="dl" style="grid-template-columns:90px 1fr;font-size:12.5px"><dt>Tipe</dt><dd>${A.tag(i.tipe)}</dd><dt>Lokasi</dt><dd>${esc(i.lokasi || '—')}</dd><dt>Kapasitas</dt><dd>${esc(i.kapasitas || '—')}</dd><dt>DR Tier</dt><dd>${esc(i.drTier || '—')}</dd><dt>KRA</dt><dd>${kraTag(i)}</dd></dl><div class="row mt-s"><button class="btn sm" onclick="App.domOpen('infra',${window.jsArg(i.id)})">Detail</button></div>`, { acts: A.badge(i.status) })).join('')}</div>`;
     },
     keamanan(items) {
       const asp = ['kerahasiaan', 'keutuhan', 'ketersediaan', 'keaslian', 'kenirsangkalan']; const pen = { penuh: 'b-ok', sebagian: 'b-warn', belum: 'b-err' };
       const score = (a) => { const c = items.filter((x) => x.aspek === a); return c.length ? Math.round((c.reduce((s, x) => s + { penuh: 1, sebagian: 0.5, belum: 0 }[x.statusPenerapan], 0) / c.length) * 100) : null; };
       return `<div class="grid g5 mb">${asp.map((a) => { const s = score(a); return `<div class="card kpi"><div class="lbl" style="text-transform:capitalize">${a}</div><div class="val">${s === null ? '—' : s + '<small>%</small>'}</div><div class="progress mt-s"><i style="width:${s || 0}%;background:${s >= 80 ? 'var(--ok)' : s >= 50 ? 'var(--warn)' : 'var(--err)'}"></i></div></div>`; }).join('')}</div>` +
         A.card(`Kontrol Keamanan (${items.length})`, A.table([{ h: 'Aspek', v: (o) => `<span style="text-transform:capitalize">${esc(o.aspek)}</span>` }, { h: 'Standar / uraian', v: (o) => esc(o.standarRujukan || '—') },
-          { h: 'Penerapan', v: (o) => A.pill(o.statusPenerapan, pen[o.statusPenerapan]) }, { h: 'KRA', v: kraTag }, { h: 'Status', v: (o) => A.badge(o.status) }], items, { click: (o) => `App.domOpen('keamanan','${o.id}')` }), { flush: true });
+          { h: 'Penerapan', v: (o) => A.pill(o.statusPenerapan, pen[o.statusPenerapan]) }, { h: 'KRA', v: kraTag }, { h: 'Status', v: (o) => A.badge(o.status) }], items, { click: (o) => `App.domOpen('keamanan',${window.jsArg(o.id)})` }), { flush: true });
     },
   };
 
@@ -94,12 +94,15 @@ window.LiveDomains = (function () {
   async function form(key, id) {
     const c = CFG[key]; const cur = id ? (cache[key] || []).find((x) => x.id === id) : null;
     let parents = []; if (key === 'proses') { try { parents = cache.proses || (await API.all('/api/v1/eaw/objects/processes')); } catch (e) { /* tanpa izin */ } parents = parents.filter((p) => p.id !== id); }
-    const kras = D.KRA.filter((k) => k.domain === c.domain);
+    // 296: hanya KRA SE-DOMAIN yang BERLAKU (Ditetapkan/Dipublikasi); tautan lama yang tidak sah tetap tampil dengan penanda agar terlihat
+    const kras = D.KRA.filter((k) => k.domain === c.domain && (k.status === 'Ditetapkan' || k.status === 'Dipublikasi'));
+    const curK = cur && cur.referensiId && !kras.some((k) => k.id === cur.referensiId) ? D.KRA.find((k) => k.id === cur.referensiId) : null;
     A.openModal(`<div class="drawer-hd"><h2>${cur ? 'Ubah' : 'Tambah'} ${esc(c.label)}</h2><button class="x" onclick="App.closeAll()">×</button></div>
-      <form class="drawer-bd" id="dom-form" onsubmit="App.domSave(event,'${key}','${id || ''}')"><div class="form-grid">
+      <form class="drawer-bd" id="dom-form" onsubmit="App.domSave(event,${window.jsArg(key)},${window.jsArg(id || '')})"><div class="form-grid">
         ${c.fields.map((f) => `<div class="field ${f.t === 'select' || f.t === 'check' ? '' : 'full'}"><label>${esc(f.l)}${f.req ? ' <span class="req">*</span>' : ''}</label>${fieldHtml(f, cur && cur[f.n], parents)}</div>`).join('')}
         ${cur ? '' : `<div class="field full"><label>Entitas pemilik <span class="req">*</span></label><select class="select" name="entityId">${D.ENTITIES.map((e) => `<option value="${esc(e.uuid)}">${esc(e.nama)}</option>`).join('')}</select></div>`}
-        <div class="field full"><label>Referensi KRA (wajib sebelum Divalidasi)</label><select class="select" name="referensiId"><option value="">— belum ditautkan —</option>${kras.map((k) => `<option value="${esc(k.id)}" ${cur && cur.referensiId === k.id ? 'selected' : ''}>${esc(k.kode)} · ${esc(k.nama)}</option>`).join('')}</select></div></div>
+        <div class="field full"><label>Referensi KRA (wajib sebelum Divalidasi)</label><select class="select" name="referensiId"><option value="">— belum ditautkan —</option>${curK ? `<option value="${esc(curK.id)}" selected>⚠ ${esc(curK.kode)} · tidak sah (${curK.domain !== c.domain ? 'domain ' + esc(curK.domain) : esc(curK.status)})</option>` : ''}${kras.map((k) => `<option value="${esc(k.id)}" ${cur && cur.referensiId === k.id ? 'selected' : ''}>${esc(k.kode)} · ${esc(k.nama)}</option>`).join('')}</select>
+          <div class="tiny muted mt-s">${kras.length ? `Hanya KRA domain ${esc(c.domain)} yang berlaku (Ditetapkan/Dipublikasi).` : `Belum ada KRA domain ${esc(c.domain)} yang berlaku — Holding EA Office perlu menerbitkannya di KRA Manager.`}</div></div></div>
         <div id="dom-err" class="mt"></div><div class="callout info mt"><span class="ic">ℹ</span>Objek baru tersimpan berstatus <b>Draf</b> (AF-05); hak susun terbatas pada entitas Anda dan turunannya (AF-03).</div></form>
       <div class="drawer-ft"><button class="btn" onclick="App.closeAll()">Batal</button><button class="btn pri" onclick="document.getElementById('dom-form').requestSubmit()">Simpan Draf</button></div>`);
   }
@@ -132,10 +135,10 @@ window.LiveDomains = (function () {
       <div class="drawer-bd"><h3>Siklus status (AF-05)</h3><div class="mt-s">${A.lifecycle(o.status)}</div>
         <h3 class="mt">Atribut</h3><dl class="dl mt-s">${attrs}<dt>KRA</dt><dd>${kraTag(o)}</dd></dl>
         ${rules ? `<h3 class="mt">Kelengkapan wajib (EAW-05)</h3><div class="stack mt-s">${rules.map((r) => `<div class="row small"><span style="color:${r.ok ? 'var(--ok)' : 'var(--err)'};font-weight:800;width:16px">${r.ok ? '✓' : '✕'}</span><span style="flex:1">${esc(r.pesan)}</span></div>`).join('')}</div>` : ''}
-        <h3 class="mt">Relasi ArchiMate (${rels.length})</h3><div class="stack small mt-s">${rels.length ? rels.map((r) => { const out = r.sumberId === id; return `<div class="row"><span class="tag">${esc(r.tipe)}</span><span>${out ? '→' : '←'}</span><span style="flex:1">${esc((out ? r.targetLabel : r.sumberLabel) || (out ? r.targetType : r.sumberType))}</span><span class="tiny muted">${esc(out ? r.targetType : r.sumberType)}</span>${editable && out ? `<button class="btn sm ghost" title="Hapus relasi" onclick="App.domRelDel('${key}','${id}','${r.id}')">✕</button>` : ''}</div>`; }).join('') : '<span class="muted">Belum ada relasi.</span>'}</div>
-        ${editable && c.rels.length ? `<div class="row mt-s">${c.rels.map(([tt, lbl], i) => `<button class="btn sm" onclick="App.domRelForm('${key}','${id}',${i})">+ ${esc(lbl)}</button>`).join('')}</div>` : ''}
+        <h3 class="mt">Relasi ArchiMate (${rels.length})</h3><div class="stack small mt-s">${rels.length ? rels.map((r) => { const out = r.sumberId === id; return `<div class="row"><span class="tag">${esc(r.tipe)}</span><span>${out ? '→' : '←'}</span><span style="flex:1">${esc((out ? r.targetLabel : r.sumberLabel) || (out ? r.targetType : r.sumberType))}</span><span class="tiny muted">${esc(out ? r.targetType : r.sumberType)}</span>${editable && out ? `<button class="btn sm ghost" title="Hapus relasi" onclick="App.domRelDel(${window.jsArg(key)},${window.jsArg(id)},${window.jsArg(r.id)})">✕</button>` : ''}</div>`; }).join('') : '<span class="muted">Belum ada relasi.</span>'}</div>
+        ${editable && c.rels.length ? `<div class="row mt-s">${c.rels.map(([tt, lbl], i) => `<button class="btn sm" onclick="App.domRelForm(${window.jsArg(key)},${window.jsArg(id)},${i})">+ ${esc(lbl)}</button>`).join('')}</div>` : ''}
       </div>
-      <div class="drawer-ft">${editable ? `<button class="btn danger" onclick="App.domDel('${key}','${id}')">Hapus</button><button class="btn" onclick="App.domForm('${key}','${id}')">Ubah</button>` : ''}${A.lockBtn(next[2], next[1], `App.domTransition('${key}','${id}')`, 'btn pri')}</div>`);
+      <div class="drawer-ft">${editable ? `<button class="btn danger" onclick="App.domDel(${window.jsArg(key)},${window.jsArg(id)})">Hapus</button><button class="btn" onclick="App.domForm(${window.jsArg(key)},${window.jsArg(id)})">Ubah</button>` : ''}${A.lockBtn(next[2], next[1], `App.domTransition(${window.jsArg(key)},${window.jsArg(id)})`, 'btn pri')}</div>`);
   }
   async function transition(key, id) {
     const c = CFG[key]; const o = (cache[key] || []).find((x) => x.id === id); const to = NEXT[o.status][0]; let catatan;
@@ -151,7 +154,7 @@ window.LiveDomains = (function () {
     const c = CFG[key]; const [tt, lbl, path, tipes] = c.rels[idx]; let items = [];
     try { items = (await API.all(`/api/v1/eaw/objects/${path}`)).filter((x) => x.id !== id); } catch (e) { /* tanpa izin */ }
     A.openModal(`<div class="drawer-hd"><h2>Hubungkan → ${esc(lbl)}</h2><button class="x" onclick="App.closeAll()">×</button></div>
-      <form class="drawer-bd" id="drel-form" onsubmit="App.domRelSave(event,'${key}','${id}',${idx})"><div class="form-grid">
+      <form class="drawer-bd" id="drel-form" onsubmit="App.domRelSave(event,${window.jsArg(key)},${window.jsArg(id)},${idx})"><div class="form-grid">
         <div class="field"><label>Tipe relasi</label><select class="select" name="tipe">${tipes.map((t) => `<option>${esc(t)}</option>`).join('')}</select></div>
         <div class="field"><label>${esc(lbl)}</label><select class="select" name="targetId" required><option value="">— pilih —</option>${items.map((x) => `<option value="${esc(x.id)}">${esc(nameOf(CFG[Object.keys(CFG).find((k) => CFG[k].path === path)], x))}</option>`).join('')}</select></div></div><div id="drel-err" class="mt"></div></form>
       <div class="drawer-ft"><button class="btn" onclick="App.closeAll()">Batal</button><button class="btn pri" onclick="document.getElementById('drel-form').requestSubmit()">Hubungkan</button></div>`);
@@ -162,7 +165,7 @@ window.LiveDomains = (function () {
     for (const key of Object.keys(CFG)) {
       const c = CFG[key];
       A.PAGES[`eaw/${key}`] = () => ({
-        html: A.pageHd(c.title, c.sub, A.lockBtn('eaw.model.write', c.add, `App.domForm('${key}')`, 'btn pri')) + '<div id="dom-body"><div class="small muted">Memuat…</div></div>',
+        html: A.pageHd(c.title, c.sub, A.lockBtn('eaw.model.write', c.add, `App.domForm(${window.jsArg(key)})`, 'btn pri')) + '<div id="dom-body"><div class="small muted">Memuat…</div></div>',
         mount: () => loadPage(key),
       });
     }

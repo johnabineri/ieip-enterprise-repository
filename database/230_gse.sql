@@ -36,7 +36,9 @@ CREATE TABLE gse.project (
     file_count     INTEGER NOT NULL DEFAULT 0,
     bytes          INTEGER NOT NULL DEFAULT 0,
     duration_ms    INTEGER,
-    prompt         TEXT,
+    prompt         TEXT,                                    -- DIMASKING PII sebelum disimpan (D-14)
+    ai             JSONB,                                   -- ringkasan AI scaffolding: {engine, model, tokens, accepted[], rejected[], attempts} (NULL = tanpa AI)
+    CONSTRAINT ck_gse_ai_obj CHECK (ai IS NULL OR jsonb_typeof(ai) = 'object'),
     CONSTRAINT ck_gse_no_push_main CHECK (lower(branch) NOT IN ('main','master','develop')),     -- D-02: 0 push langsung ke main
     CONSTRAINT ck_gse_blocked_reason CHECK ((status = 'blocked') = (reason IS NOT NULL))
 );
@@ -49,6 +51,7 @@ CREATE TABLE gse.project_file (
     path       VARCHAR(500) NOT NULL,
     content    TEXT NOT NULL,
     bytes      INTEGER NOT NULL,
+    source     VARCHAR(10) NOT NULL DEFAULT 'template' CHECK (source IN ('template','ai')),   -- 'ai' = diusulkan model (wajib reviu manusia)
     UNIQUE (project_id, path)
 );
 

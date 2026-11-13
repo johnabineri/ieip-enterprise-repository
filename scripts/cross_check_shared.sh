@@ -5,7 +5,11 @@
 #
 # Memverifikasi struktur tabel modul `shared` (audit_logs, documents, outbox)
 # IDENTIK antara database EAP dan database CMP — nama tabel, nama kolom, tipe
-# data, dan nullability.
+# data, dan nullability — DAN isi setiap fungsi yang didefinisikan di
+# 010_shared.sql (md5 pg_get_functiondef; mis. outbox_claim/tg_outbox). Fungsi
+# shared tambahan yang khusus satu platform (mis. CMP is_privileged_role) tidak
+# dibandingkan. Tanpa bagian [3], perbaikan fungsi bersama yang hanya diterapkan
+# di satu DB tidak akan pernah terdeteksi.
 #
 # Parameter fungsi apply_standard() DIKECUALIKAN dari pengecekan ini karena
 # memang berbeda per platform (p_user_table: 'set.users' di EAP, 'iam.users'
@@ -26,6 +30,8 @@ PSQL="${PSQL:-psql}"
 # Tabel yang dibandingkan (rujukan ADR-CMP-004 rekomendasi 3)
 TABLES="${SHARED_TABLES:-audit_logs documents outbox}"
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_SQL="${SHARED_SQL:-$HERE/../database/010_shared.sql}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -104,11 +110,39 @@ else
   grep -E '^[+-][^+-]' "$TMP/diff" | sed -e 's/^+/  EAP saja: /' -e 's/^-/  CMP saja: /'
 fi
 
+# --- 3. Isi fungsi bersama (010_shared.sql) ---------------------------------
+echo
+echo "--- [3] Isi fungsi shared dari 010_shared.sql (harus identik) ---"
+FUNCS="$(grep -oE 'CREATE (OR REPLACE )?FUNCTION shared\.[a-z_0-9]+' "$SHARED_SQL" | sed 's/.*shared\.//' | sort -u | paste -sd, -)"
+if [ -z "$FUNCS" ]; then
+  echo "  GAGAL  tidak ada fungsi terbaca dari $SHARED_SQL"; FAIL=1
+else
+  for side in eap cmp; do
+    db="$EAP_DB"; [ "$side" = cmp ] && db="$CMP_DB"
+    q "$db" "SELECT p.oid::regprocedure::text || E'	' || md5(pg_get_functiondef(p.oid))
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = '$SCHEMA' AND p.proname = ANY (string_to_array('$FUNCS', ','))
+             ORDER BY 1;" > "$TMP/fn_$side"
+  done
+  NEXP=$(echo "$FUNCS" | tr ',' '
+' | wc -l | tr -d ' ')
+  if diff -u "$TMP/fn_cmp" "$TMP/fn_eap" > "$TMP/fndiff" 2>&1 && [ "$(cut -f1 "$TMP/fn_eap" | sed 's/(.*//' | sort -u | wc -l | tr -d ' ')" -eq "$NEXP" ]; then
+    echo "  OK     $(wc -l < "$TMP/fn_eap" | tr -d ' ') fungsi identik ($NEXP nama dari $(basename "$SHARED_SQL"))"
+  else
+    FAIL=1
+    grep -E '^[+-][^+-]' "$TMP/fndiff" | cut -f1 | sed -e 's/^+/  BEDA (versi EAP): /' -e 's/^-/  BEDA (versi CMP): /'
+    for f in $(echo "$FUNCS" | tr ',' ' '); do
+      grep -q "^shared\.$f(" "$TMP/fn_eap" || echo "  HILANG di EAP: shared.$f"
+      grep -q "^shared\.$f(" "$TMP/fn_cmp" || echo "  HILANG di CMP: shared.$f"
+    done
+  fi
+fi
+
 # --- Ringkasan --------------------------------------------------------------
 echo
 echo "=================================================================="
 if [ "$FAIL" -ne 0 ]; then
-  echo " HASIL: GAGAL — struktur $SCHEMA.* EAP tidak identik dengan CMP"
+  echo " HASIL: GAGAL — struktur/fungsi $SCHEMA.* EAP tidak identik dengan CMP"
   echo " Tindakan: samakan DDL (010_shared.sql adalah sumber kebenaran),"
   echo "           lalu jalankan ulang gate ini (ADR-CMP-004)."
   echo "=================================================================="

@@ -1,11 +1,14 @@
+import { telemetryEnabled } from './telemetry';   // HARUS pertama (instrumentasi http/express/pg)
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { appModuleFor, SERVICE_NAMES, ServiceName } from './app.module';
 import { loadConfig } from './config';
 
 async function bootstrap() {
   const cfg = loadConfig();
-  const app = await NestFactory.create(AppModule);
+  const service = (process.env.SERVICE ?? 'all') as ServiceName;
+  if (!SERVICE_NAMES.includes(service)) throw new Error(`SERVICE tidak dikenal: "${service}" (pilihan: ${SERVICE_NAMES.join(', ')})`);
+  const app = await NestFactory.create(appModuleFor(service));
   app.enableShutdownHooks();
   if (cfg.corsOrigins.length) {
     app.enableCors({
@@ -15,6 +18,6 @@ async function bootstrap() {
     });
   }
   await app.listen(cfg.port);
-  console.log(`EAP API mendengarkan di :${cfg.port}`);
+  console.log(`EAP API [${service}] mendengarkan di :${cfg.port}${telemetryEnabled ? ' · OpenTelemetry aktif' : ''}`);
 }
 bootstrap();

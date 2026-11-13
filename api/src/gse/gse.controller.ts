@@ -1,16 +1,21 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
-import { IsArray, IsIn, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ArrayMinSize, ArrayMaxSize } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ArrayMinSize, ArrayMaxSize } from 'class-validator';
 import type { Response } from 'express';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, pageLimit, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
 import { DbService } from '../db/db.service';
+import { AI_LIMITS, aiScaffold, AiProposal } from './ai-scaffold';
+import { guard, maskPii } from '../req/guardrails';
+import { LlmCfg, llmCfg } from '../req/elicit';
 import { renderFiles, runGates, tar, toYaml, varsFor, TplFile } from './scaffold';
 
 class ScaffoldDto {
   @IsUUID() applicationId: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20) @IsUUID(undefined, { each: true }) templateIds: string[];
   @IsOptional() @IsString() @MaxLength(2000) prompt?: string;
+  /** true = minta model menambah berkas berdasarkan prompt (wajib prompt >= 15 karakter; LLM harus terkonfigurasi). */
+  @IsOptional() @IsBoolean() aiAssist?: boolean;
   @IsOptional() @IsString() @Matches(/^[a-z0-9][a-z0-9._/-]{2,80}$/) branch?: string;
 }
 class TemplateDto {
@@ -49,7 +54,7 @@ function checkFiles(files: Array<{ path: string; content: string }>) {
 const tplDto = (r: any, withFiles = false) => ({ id: r.id, kode: r.kode, nama: r.nama, kategori: r.kategori, stack: r.stack, versi: r.versi, deskripsi: r.deskripsi,
   fileCount: Array.isArray(r.files) ? r.files.length : 0, ...(withFiles ? { files: r.files } : {}), createdAt: r.created_at, version: r.row_version });
 const projDto = (r: any) => ({ id: r.id, applicationId: r.application_id, kode: r.kode, templateIds: r.template_ids, backend: r.backend, repoGit: r.repo_git, branch: r.branch,
-  baseBranch: r.base_branch, status: r.status, reason: r.reason, gates: r.gates, fileCount: r.file_count, bytes: r.bytes, durationMs: r.duration_ms, prompt: r.prompt, createdBy: r.created_by, createdAt: r.created_at });
+  baseBranch: r.base_branch, status: r.status, reason: r.reason, gates: r.gates, fileCount: r.file_count, bytes: r.bytes, durationMs: r.duration_ms, prompt: r.prompt, ai: r.ai ?? null, createdBy: r.created_by, createdAt: r.created_at });
 const flowDto = (r: any) => ({ id: r.id, nama: r.nama, kind: r.kind, spec: r.spec, status: r.status, valid: r.valid, problems: r.problems, createdAt: r.created_at, version: r.row_version });
 
 /**
@@ -81,6 +86,13 @@ export class GseController {
   }
 
   // ---------------- template ----------------
+  /** Kesiapan AI scaffolding: LLM terkonfigurasi + kill-switch gse-ai aktif. Kunci API tidak pernah dikembalikan. */
+  @Get('ai/status') @RequirePermission('gse.project.read')
+  async aiStatus(@CurrentUser() p: Principal) {
+    const cfg = llmCfg(); const on = await this.db.tx(p, async (c) => (await c.query(`SELECT console.agent_enabled('gse-ai') AS on`)).rows[0].on);
+    return { configured: !!cfg, model: cfg?.model ?? null, enabled: !!on, ready: !!cfg && !!on, limits: AI_LIMITS };
+  }
+
   @Get('templates') @RequirePermission('gse.project.read')
   templates(@CurrentUser() p: Principal) {
     return this.db.tx(p, async (c) => ({ data: (await c.query('SELECT * FROM gse.template WHERE deleted_at IS NULL ORDER BY kategori, kode')).rows.map((r) => tplDto(r)) }));
@@ -133,7 +145,7 @@ export class GseController {
     return this.db.tx(p, async (c) => {
       const r = (await c.query('SELECT * FROM gse.project WHERE id = $1 AND deleted_at IS NULL', [uuidOr400(id)])).rows[0];
       if (!r) throw new NotFoundException('proyek tidak ditemukan');
-      const files = (await c.query('SELECT path, bytes FROM gse.project_file WHERE project_id = $1 ORDER BY path', [id])).rows;
+      const files = (await c.query('SELECT path, bytes, source FROM gse.project_file WHERE project_id = $1 ORDER BY path', [id])).rows;
       return { ...projDto(r), files };
     });
   }
@@ -152,7 +164,8 @@ export class GseController {
     const { proj, files } = await this.db.tx(p, async (c) => {
       const proj = (await c.query('SELECT kode, branch, status FROM gse.project WHERE id = $1 AND deleted_at IS NULL', [uuidOr400(id)])).rows[0];
       if (!proj) throw new NotFoundException('proyek tidak ditemukan');
-      return { proj, files: (await c.query('SELECT path, content FROM gse.project_file WHERE project_id = $1 ORDER BY path', [id])).rows as TplFile[] };
+      // isi RUANG KERJA (GSE-05): berkas asli + suntingan editor, tanpa yang dihapus — identik dengan hasil generate bila belum disunting
+      return { proj, files: (await c.query('SELECT path, content FROM gse.workspace_file WHERE project_id = $1 AND NOT deleted ORDER BY path', [id])).rows as TplFile[] };
     });
     if (!files.length) throw new ProblemException(409, 'invalid-state', 'Proyek tanpa berkas (diblokir)');
     res.setHeader('Content-Type', 'application/x-tar');
@@ -175,22 +188,53 @@ export class GseController {
         [b.applicationId, gate.kode, b.templateIds, branch, gate.reason, gate.repo_git ?? null, b.prompt ?? null])).rows[0].id);
       throw new ProblemException(422, 'af-06-blocked', 'Gerbang AF-06', gate.reason, { projectId: id });
     }
-    return this.db.tx(p, async (c) => {
+    // D-14: prompt DIMASKING sebelum disimpan atau dikirim ke model
+    const masked = b.prompt ? maskPii(b.prompt) : null;
+    let cfg: LlmCfg | null = null;
+    if (b.aiAssist) {
+      if (!masked || masked.text.trim().length < 15) throw new ProblemException(400, 'bad-request', 'Prompt AI terlalu pendek', 'aiAssist memerlukan prompt minimal 15 karakter yang menjelaskan berkas yang diinginkan.');
+      let v; try { v = await guard(masked.text, true); }                                               // OPA (OPA_URL) atau mesin pola lokal; fail-closed
+      catch (e) { throw new ProblemException(503, 'guardrail-unavailable', 'Guardrail tidak tersedia', (e as Error).message); }
+      if (!v.allowed) throw new ProblemException(422, 'ai-guard-blocked', 'Prompt ditolak guardrail', `${v.reason} [${v.category}] — tidak dikirim ke model.`);
+      cfg = llmCfg(); if (!cfg) throw new ProblemException(503, 'llm-unavailable', 'LLM tidak dikonfigurasi', 'aiAssist memerlukan LLM_BASE_URL (OpenAI-compatible). Tanpa itu gunakan scaffold deterministik.');
+      const on = await this.db.tx(p, async (c) => (await c.query(`SELECT console.agent_enabled('gse-ai') AS on`)).rows[0].on);       // SEC-01: diperiksa SEBELUM tiap panggilan
+      if (!on) throw new ProblemException(503, 'agent-disabled', 'Scaffolding AI dinonaktifkan kill-switch', 'Dinonaktifkan melalui CONSOLE → Security Center. Prompt tidak dikirim ke model.');
+    }
+    // A. render deterministik (transaksi baca)
+    const base = await this.db.tx(p, async (c) => {
       const tpls = (await c.query('SELECT id, kode, files FROM gse.template WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL', [b.templateIds])).rows;
       if (tpls.length !== new Set(b.templateIds).size) throw new ProblemException(422, 'validation-failed', 'Template tidak ditemukan', 'Satu atau lebih templateIds tidak ada / sudah dihapus');
       const vars = varsFor(gate);
-      const files = renderFiles(tpls, vars);
+      return { tpls, vars, files: renderFiles(tpls, vars) };
+    });
+    // B. AI di LUAR transaksi DB (panggilan jaringan): model hanya mengusulkan berkas BARU yang lolos validasi
+    let aiFiles: AiProposal[] = []; let ai: Record<string, unknown> | null = null; let usage = { prompt: 0, completion: 0 };
+    if (cfg && masked) {
+      const out = await aiScaffold(cfg, { kode: gate.kode, nama: gate.nama, kodeLower: base.vars.app_kode_lower, backend: base.tpls.some((t: any) => t.kode === 'tpl-nest-clean') ? 'nestjs' : base.tpls.some((t: any) => t.kode === 'tpl-go-fiber') ? 'gofiber' : 'none',
+        existingPaths: base.files.map((f) => f.path), prompt: masked.text, templateKodes: base.tpls.map((t: any) => t.kode) });
+      aiFiles = out.accepted; usage = out.usage;
+      ai = { engine: 'llm', model: cfg.model, promptTokens: out.usage.prompt, completionTokens: out.usage.completion, attempts: out.attempts, piiMasked: masked.found,
+        accepted: out.accepted.map((f) => ({ path: f.path, alasan: f.alasan })), rejected: out.rejected };
+    }
+    // C. gerbang lokal atas SEMUA berkas (templat + AI) lalu simpan
+    return this.db.tx(p, async (c) => {
+      const files: TplFile[] = [...base.files, ...aiFiles.map((f) => ({ path: f.path, content: f.content }))];
+      const sources = [...base.files.map(() => 'template'), ...aiFiles.map(() => 'ai')];
       const gates = runGates(files);
       const failed = Object.values(gates).some((g) => g.status === 'err');
       const bytes = files.reduce((s, f) => s + Buffer.byteLength(f.content), 0);
-      const backend = tpls.some((t: any) => t.kode === 'tpl-nest-clean') ? 'nestjs' : tpls.some((t: any) => t.kode === 'tpl-go-fiber') ? 'gofiber' : 'none';
+      const backend = base.tpls.some((t: any) => t.kode === 'tpl-nest-clean') ? 'nestjs' : base.tpls.some((t: any) => t.kode === 'tpl-go-fiber') ? 'gofiber' : 'none';
       const ins = await c.query(
-        `INSERT INTO gse.project (application_id, kode, template_ids, backend, repo_git, branch, status, gates, file_count, bytes, duration_ms, prompt)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12) RETURNING *`,
-        [b.applicationId, gate.kode, b.templateIds, backend, vars.repo_git, branch, failed ? 'checks-failed' : 'generated', JSON.stringify(gates), files.length, bytes, Date.now() - t0, b.prompt ?? null]);
-      await c.query('INSERT INTO gse.project_file (project_id, path, content, bytes) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::int[])',
-        [ins.rows[0].id, files.map((f) => f.path), files.map((f) => f.content), files.map((f) => Buffer.byteLength(f.content))]);
-      return { ...projDto(ins.rows[0]), files: files.map((f) => ({ path: f.path, bytes: Buffer.byteLength(f.content) })) };
+        `INSERT INTO gse.project (application_id, kode, template_ids, backend, repo_git, branch, status, gates, file_count, bytes, duration_ms, prompt, ai)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13::jsonb) RETURNING *`,
+        [b.applicationId, gate.kode, b.templateIds, backend, base.vars.repo_git, branch, failed ? 'checks-failed' : 'generated', JSON.stringify(gates), files.length, bytes, Date.now() - t0, masked ? masked.text : null, ai ? JSON.stringify(ai) : null]);
+      await c.query('INSERT INTO gse.project_file (project_id, path, content, bytes, source) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::int[], $5::text[])',
+        [ins.rows[0].id, files.map((f) => f.path), files.map((f) => f.content), files.map((f) => Buffer.byteLength(f.content)), sources]);
+      if (cfg) {                                                                                         // FIN-01: metering token (biaya dihitung DB dari harga model terdaftar)
+        await c.query(`INSERT INTO console.token_usage (model_name, workspace, entity_id, user_id, prompt_tokens, completion_tokens) VALUES ($1,'gse',(SELECT id FROM ref.business_groups WHERE code = $2),$3,$4,$5)`,
+          [cfg.model, gate.entity_code, p.userId, usage.prompt, usage.completion]);
+      }
+      return { ...projDto(ins.rows[0]), files: files.map((f, i) => ({ path: f.path, bytes: Buffer.byteLength(f.content), source: sources[i] })) };
     });
   }
 

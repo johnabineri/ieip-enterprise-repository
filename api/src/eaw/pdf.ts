@@ -35,9 +35,11 @@ export async function renderPdf(html: string): Promise<Buffer> {
     const src = join(dir, 'dok.html'); const out = join(dir, 'dok.pdf');
     await writeFile(src, html, 'utf8');
     await new Promise<void>((resolve, reject) => {
-      execFile(bin, ['--headless', '--disable-gpu', '--no-first-run', '--disable-extensions', '--host-resolver-rules=MAP * ~NOTFOUND',
+      execFile(bin, [...(process.env.PDF_NO_SANDBOX === '1' ? ['--no-sandbox'] : []), '--headless', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--disable-extensions', '--host-resolver-rules=MAP * ~NOTFOUND',
         `--user-data-dir=${join(dir, 'profil')}`, '--no-pdf-header-footer', `--print-to-pdf=${out}`, pathToFileURL(src).href],
-        { timeout: Number(process.env.PDF_TIMEOUT_MS || 30000), windowsHide: true }, (err) => (err ? reject(err) : resolve()));
+        { timeout: Number(process.env.PDF_TIMEOUT_MS || 30000), windowsHide: true,
+          // HOME/XDG diarahkan ke direktori sementara per-render: Chromium menulis crash database/konfigurasi di sana — wajib di kontainer berfilesystem read-only dan non-root
+          env: { ...process.env, HOME: dir, XDG_CONFIG_HOME: dir, XDG_CACHE_HOME: dir } }, (err) => (err ? reject(err) : resolve()));
     });
     const pdf = await readFile(out);
     if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('keluaran bukan PDF');

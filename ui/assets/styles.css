@@ -48,7 +48,7 @@ h1{font-size:22px;font-weight:700;letter-spacing:-.01em}
 h2{font-size:16px;font-weight:700}
 h3{font-size:14px;font-weight:700}
 p{margin:0}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.sr{position:absolute;top:0;left:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
 /* ---------- Shell ---------- */
 .shell{display:grid;grid-template-rows:56px 1fr;grid-template-columns:248px minmax(0,1fr);height:100vh;transition:grid-template-columns .18s ease;
@@ -454,11 +454,11 @@ pre.code .k{color:#3DD28A} pre.code .s{color:#8FD19E} pre.code .c{color:#6B7B8C;
 
 /* ---------- Scrollbar tipis (sidebar tampil saat hover) ---------- */
 @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}.nav{scrollbar-color:transparent transparent}.nav:hover{scrollbar-color:var(--border-strong) transparent}}
-*::-webkit-scrollbar{width:6px;height:6px}
+*::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-track{background:transparent}
 *::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:8px;border:2px solid transparent;background-clip:padding-box}
 *::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:padding-box;border:2px solid transparent}
-.nav::-webkit-scrollbar{width:5px}
+.nav::-webkit-scrollbar{width:8px}
 .nav::-webkit-scrollbar-thumb{background:transparent;background-clip:padding-box}
 .nav:hover::-webkit-scrollbar-thumb{background:var(--border-strong);background-clip:padding-box}
 

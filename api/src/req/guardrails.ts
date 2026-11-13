@@ -1,40 +1,67 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 /**
- * Guardrail REQ (REQ-02/03, D-03) — evaluator DETERMINISTIK lokal, dievaluasi sebelum teks menyentuh LLM mana pun.
- * Jujur soal batas: ini aturan pola (anti-jailbreak/prompt-injection + domain-fencing berbasis kata kunci), BUKAN NeMo Guardrails/OPA
- * sungguhan dan tidak mengklaim akurasi ≥ 99,5%. Fail-closed: galat evaluasi → permintaan ditolak (503), bukan diloloskan.
+ * Guardrail REQ & GSE-AI (REQ-02/03, D-03) — dievaluasi SEBELUM teks menyentuh LLM mana pun. Dua mesin, SATU sumber aturan
+ * (./policy/data.json; korpus uji yang sama dijalankan `opa test` dan Jest):
+ *   - `opa`     : Open Policy Agent sungguhan (OPA_URL) — kebijakan ./policy/guardrail.rego, POST /v1/data/keis/guardrail/decision.
+ *   - `pattern` : evaluator lokal deterministik atas aturan yang sama (dipakai bila OPA_URL kosong, mis. dev/uji).
+ * Fail-closed: OPA tidak terjangkau / timeout / jawaban tidak sah → Error (pemanggil menjawab 503), TIDAK PERNAH diloloskan diam-diam
+ * dan tidak jatuh ke mesin lokal. Batas jujur: klasifikasi berbasis POLA (bukan model semantik/NeMo), tanpa klaim akurasi.
  */
-export type GuardEngine = 'opa-rego' | 'fencing';
-export interface GuardVerdict { allowed: boolean; engine?: GuardEngine; category?: string; reason?: string; ms: number }
+export type GuardEngine = 'opa' | 'pattern';
+export interface GuardVerdict { allowed: boolean; engine: GuardEngine; category?: string; reason?: string; ms: number }
 
-const JAILBREAK: RegExp[] = [
-  /abaikan\s+(semua\s+|seluruh\s+)?(instruksi|perintah|aturan)/i,
-  /ignore\s+(all\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions?|rules?|prompts?)/i,
-  /(system|developer)\s+(prompt|message|instruction)/i,
-  /\bjailbreak\b/i, /\bDAN\b/, /developer\s+mode/i,
-  /pura-?pura\s+(jadi|menjadi|kamu|anda)/i, /\b(role-?play|bermain\s+peran)\b/i, /you\s+are\s+now\b/i,
-  /bypass\s+(guardrail|filter|aturan|pembatasan)/i, /matikan\s+(guardrail|filter|pembatasan)/i,
-  /(tampilkan|ungkap|bocorkan)\s+(prompt|instruksi)\s+(sistem|awal|rahasia)/i, /reveal\s+(your\s+)?(system\s+)?(prompt|instructions)/i,
-  /(<\|?\s*system\s*\|?>|\[\[?\s*system\s*\]?\]|###\s*(system|instruction)|BEGIN\s+SYSTEM)/i,       // indirect prompt injection
-];
-const OFF_TOPIC = /\b(resep|masak|memasak|sepak\s?bola|film|drakor|gosip|zodiak|horoskop|ramalan|lirik|lagu|pacar|togel|judi|saham\s+gorengan|wisata|cuaca\s+hari\s+ini)\b/i;
-const DOMAIN = /\b(sistem|aplikasi|pengguna|aktor|admin|data|proses|layanan|api|modul|fitur|laporan|cabang|pelanggan|vendor|karyawan|approval|persetujuan|workflow|integrasi|dashboard|notifikasi|form|input|output|master|seddi|spk|pesanan|order|invoice|stok|gudang|role|akses|sebagai|saya\s+ingin|story|requirement|kebutuhan|validasi|database|tabel|aturan|bisnis|pengecualian|gagal|timeout|error|sehingga|agar|supaya|dokumen|transaksi|pembayaran|pengiriman|inventori|aset)\b/i;
+interface Rules { max_len: number; jailbreak_ci: string[]; jailbreak_cs: string[]; off_topic_ci: string; domain_ci: string; reasons: Record<string, string> }
+export const POLICY_DIR = join(__dirname, 'policy');
+const POLICY = JSON.parse(readFileSync(join(POLICY_DIR, 'data.json'), 'utf8')).keis as { guardrail_rules: Rules; guardrail_cases: Array<{ text: string; first_turn: boolean; allowed: boolean; category?: string }> };
+const R = POLICY.guardrail_rules;
+export const GUARDRAIL_CASES = POLICY.guardrail_cases;
+const JAILBREAK = [...R.jailbreak_ci.map((p) => new RegExp(p, 'i')), ...R.jailbreak_cs.map((p) => new RegExp(p))];
+const OFF_TOPIC = new RegExp(R.off_topic_ci, 'i');
+const DOMAIN = new RegExp(R.domain_ci, 'i');
 
-export const MAX_LEN = 4000;
+export const MAX_LEN = R.max_len;
 
-/** `firstTurn`: pesan pertama sesi wajib bernuansa perancangan sistem (fencing ketat); balasan lanjutan dibolehkan singkat. */
+/** Mesin lokal (`pattern`). `firstTurn`: pesan pertama sesi wajib bernuansa perancangan sistem; balasan lanjutan boleh singkat. */
 export function evaluate(text: string, firstTurn: boolean): GuardVerdict {
   const t0 = performance.now();
-  const done = (v: Omit<GuardVerdict, 'ms'>): GuardVerdict => ({ ...v, ms: Math.max(1, Math.round(performance.now() - t0)) });
+  const done = (v: Omit<GuardVerdict, 'ms' | 'engine'>): GuardVerdict => ({ ...v, engine: 'pattern', ms: Math.max(1, Math.round(performance.now() - t0)) });
   try {
-    if (text.length > MAX_LEN) return done({ allowed: false, engine: 'fencing', category: 'too-long', reason: `Pesan melebihi ${MAX_LEN} karakter.` });
-    if (JAILBREAK.some((r) => r.test(text))) return done({ allowed: false, engine: 'opa-rego', category: 'jailbreak', reason: 'Terdeteksi pola prompt injection / roleplay jailbreak (REQ-03).' });
+    if (text.length > MAX_LEN) return done({ allowed: false, category: 'too-long', reason: R.reasons['too-long'] });
+    if (JAILBREAK.some((r) => r.test(text))) return done({ allowed: false, category: 'jailbreak', reason: R.reasons.jailbreak });
     const dom = DOMAIN.test(text);
-    if (OFF_TOPIC.test(text) && !dom) return done({ allowed: false, engine: 'fencing', category: 'off-topic', reason: 'Topik di luar perancangan sistem korporat (D-03 hard fencing).' });
-    if (firstTurn && !dom) return done({ allowed: false, engine: 'fencing', category: 'off-topic', reason: 'Pesan pertama harus menjelaskan kebutuhan sistem/aplikasi (D-03 hard fencing).' });
+    if (OFF_TOPIC.test(text) && !dom) return done({ allowed: false, category: 'off-topic', reason: R.reasons['off-topic'] });
+    if (firstTurn && !dom) return done({ allowed: false, category: 'off-topic', reason: R.reasons['first-turn'] });
     return done({ allowed: true });
   } catch (e) {
     throw new Error('guardrail gagal dievaluasi (fail-closed): ' + (e as Error).message);
   }
+}
+
+/** Konfigurasi mesin aktif (dibaca per panggilan, sehingga uji dapat mengubah env saat berjalan). */
+export const guardEngine = (): { engine: GuardEngine; url: string | null; timeoutMs: number } => {
+  const url = (process.env.OPA_URL || '').replace(/\/+$/, '') || null;
+  return { engine: url ? 'opa' : 'pattern', url, timeoutMs: Number(process.env.OPA_TIMEOUT_MS || 1500) };
+};
+
+/** Evaluasi guardrail dengan mesin aktif. Melempar Error (→ 503) bila OPA dikonfigurasi tetapi tidak memberi keputusan sah. */
+export async function guard(text: string, firstTurn: boolean): Promise<GuardVerdict> {
+  const cfg = guardEngine();
+  if (!cfg.url) return evaluate(text, firstTurn);
+  const t0 = performance.now(); const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), cfg.timeoutMs);
+  try {
+    const r = await fetch(`${cfg.url}/v1/data/keis/guardrail/decision`, { method: 'POST', signal: ctl.signal, redirect: 'manual',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input: { text, first_turn: firstTurn } }) });
+    if (!r.ok) throw new Error(`OPA HTTP ${r.status}`);
+    const d = (await r.json() as { result?: { allowed?: unknown; category?: unknown; reason?: unknown } }).result;
+    // `result` hilang = kebijakan tidak termuat/path salah; tipe salah = kebijakan rusak → keduanya fail-closed
+    if (!d || typeof d.allowed !== 'boolean' || (d.category !== undefined && typeof d.category !== 'string') || (d.reason !== undefined && typeof d.reason !== 'string')) throw new Error('keputusan OPA tidak sah');
+    if (!d.allowed && d.category === 'internal') throw new Error(`OPA fail-closed: ${String(d.reason ?? '')}`.slice(0, 200));
+    return { allowed: d.allowed, engine: 'opa', ...(d.allowed ? {} : { category: d.category as string, reason: d.reason as string }), ms: Math.max(1, Math.round(performance.now() - t0)) };
+  } catch (e) {
+    throw new Error('guardrail OPA tidak memberi keputusan (fail-closed): ' + ((e as Error).name === 'AbortError' ? `timeout ${cfg.timeoutMs} ms` : (e as Error).message));
+  } finally { clearTimeout(timer); }
 }
 
 const MASKS: Array<[string, RegExp, string]> = [

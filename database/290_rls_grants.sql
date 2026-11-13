@@ -198,3 +198,23 @@ GRANT SELECT ON gse.git_event TO eap_ro;
 CALL eaw.enable_rls('gse.git_event'::regclass);
 CREATE POLICY rls_gse_git_sel ON gse.git_event FOR SELECT TO eap_app, eap_ro USING (set.has_perm('gse.project.read') OR set.has_perm('gse.project.run'));
 CREATE POLICY rls_gse_git_ins ON gse.git_event FOR INSERT TO eap_app WITH CHECK (set.has_perm('gse.project.run'));
+
+-- ---------- Master IT Roadmap (286) ----------
+GRANT SELECT, INSERT, UPDATE ON eaw.roadmap_phase, eaw.roadmap_item TO eap_app;                 -- hapus = hapus lunak (UPDATE deleted_at)
+GRANT SELECT ON eaw.roadmap_phase, eaw.roadmap_item TO eap_ro;
+CALL eaw.enable_rls('eaw.roadmap_phase'::regclass);
+CALL eaw.enable_rls('eaw.roadmap_item'::regclass);
+CREATE POLICY rls_roadmap_phase_sel ON eaw.roadmap_phase FOR SELECT TO eap_app, eap_ro USING (set.has_perm('eaw.catalog.read') OR set.has_perm('eaw.roadmap.write'));
+CREATE POLICY rls_roadmap_phase_ins ON eaw.roadmap_phase FOR INSERT TO eap_app WITH CHECK (set.has_perm('eaw.roadmap.write'));
+CREATE POLICY rls_roadmap_phase_upd ON eaw.roadmap_phase FOR UPDATE TO eap_app USING (set.has_perm('eaw.roadmap.write')) WITH CHECK (set.has_perm('eaw.roadmap.write'));
+CREATE POLICY rls_roadmap_item_sel ON eaw.roadmap_item FOR SELECT TO eap_app, eap_ro USING (set.has_perm('eaw.catalog.read') OR set.has_perm('eaw.roadmap.write'));
+CREATE POLICY rls_roadmap_item_ins ON eaw.roadmap_item FOR INSERT TO eap_app WITH CHECK (set.has_perm('eaw.roadmap.write'));
+CREATE POLICY rls_roadmap_item_upd ON eaw.roadmap_item FOR UPDATE TO eap_app USING (set.has_perm('eaw.roadmap.write')) WITH CHECK (set.has_perm('eaw.roadmap.write'));
+
+-- ---------- ADR → Git (288) ----------
+REVOKE UPDATE, DELETE ON eaw.adr_git FROM eap_app;
+GRANT SELECT, INSERT ON eaw.adr_git TO eap_app;
+GRANT SELECT ON eaw.adr_git TO eap_ro;
+CALL eaw.enable_rls('eaw.adr_git'::regclass);
+CREATE POLICY rls_adr_git_sel ON eaw.adr_git FOR SELECT TO eap_app, eap_ro USING (set.has_perm('eaw.adr.read'));
+CREATE POLICY rls_adr_git_ins ON eaw.adr_git FOR INSERT TO eap_app WITH CHECK (set.has_perm('eaw.adr.write'));

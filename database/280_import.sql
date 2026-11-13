@@ -3,7 +3,7 @@
 -- =====================================================================
 CREATE TABLE eaw.import_log (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    jenis      VARCHAR(20) NOT NULL CHECK (jenis IN ('processes','data-entities','services','infra-assets','controls','applications','relations')),
+    jenis      VARCHAR(20) NOT NULL CHECK (jenis IN ('processes','data-entities','services','infra-assets','controls','applications','relations','diagram-xml')),
     sha256     CHAR(64) NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
     baris      INTEGER NOT NULL CHECK (baris >= 0),
     dibuat     INTEGER NOT NULL CHECK (dibuat >= 0),

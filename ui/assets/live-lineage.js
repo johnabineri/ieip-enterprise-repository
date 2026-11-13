@@ -23,7 +23,7 @@ window.LiveLineage = (function () {
       ${g.edges.map((e) => { const a = pos[e.from], b = pos[e.to]; if (!a || !b) return ''; const on = edgeHit.has(e.from + '>' + e.to); const cls = !S.impact ? '' : on ? 'hit' : 'dim'; const x1 = a[0] + cw - 40, y1 = a[1] + 18, x2 = b[0] - 6, y2 = b[1] + 18;
         const d = a[0] === b[0] ? `M${a[0] + cw - 40} ${a[1] + 18} C${a[0] + cw - 5} ${a[1] + 18}, ${a[0] + cw - 5} ${b[1] + 18}, ${b[0] + cw - 40} ${b[1] + 18}` : x1 < x2 ? `M${x1} ${y1} C${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}` : `M${a[0]} ${y1} C${a[0] - 30} ${y1}, ${b[0] + cw - 10} ${y2}, ${b[0] + cw - 40} ${y2}`;
         return `<path class="lin-edge ${cls}" d="${d}" marker-end="url(#lar)"><title>${esc(e.tipe)}</title></path>`; }).join('')}
-      ${g.nodes.map((n) => { const [x, y] = pos[n.key]; return `<g class="lin-node ${st(n.key)}" onclick="App.linSel('${esc(n.type)}','${esc(n.id)}')"><rect x="${x}" y="${y}" width="${cw - 40}" height="36" rx="7"/><text x="${x + 10}" y="${y + 22}">${esc(n.label.length > 24 ? n.label.slice(0, 23) + '…' : n.label)}</text><title>${esc(n.label)} · ${esc(n.status)} · ${esc(n.entityCode)}</title></g>`; }).join('')}</svg>`;
+      ${g.nodes.map((n) => { const [x, y] = pos[n.key]; return `<g class="lin-node ${st(n.key)}" onclick="App.linSel(${window.jsArg(n.type)},${window.jsArg(n.id)})"><rect x="${x}" y="${y}" width="${cw - 40}" height="36" rx="7"/><text x="${x + 10}" y="${y + 22}">${esc(n.label.length > 24 ? n.label.slice(0, 23) + '…' : n.label)}</text><title>${esc(n.label)} · ${esc(n.status)} · ${esc(n.entityCode)}</title></g>`; }).join('')}</svg>`;
   }
   function side() {
     const im = S.impact;

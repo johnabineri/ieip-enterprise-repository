@@ -47,7 +47,9 @@ export class Github {
 
   async defaultBranch(repo: string): Promise<string | null> { return (await this.call<{ default_branch: string | null }>('GET', `/repos/${repo}`)).data.default_branch; }
 
-  async pushBranch(repo: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string }>): Promise<{ commitSha: string }> {
+  /** Apakah berkas ada di `ref`? */
+  async fileExists(repo: string, file: string, ref: string) { return (await this.call('GET', `/repos/${repo}/contents/${enc(file)}?ref=${encodeURIComponent(ref)}`, undefined, [200, 404])).status === 200; }
+  async pushBranch(repo: string, branch: string, base: string, message: string, files: Array<{ path: string; content: string; update?: boolean }>): Promise<{ commitSha: string }> {
     const ref = await this.call<{ object: { sha: string } }>('GET', `/repos/${repo}/git/ref/heads/${enc(base)}`, undefined, [200, 404, 409]);   // repo kosong = 409 "Git Repository is empty" (diverifikasi ke api.github.com)
     if (ref.status === 404 || ref.status === 409) throw new ProblemException(422, 'validation-failed', 'Repo kosong atau cabang dasar tidak ada', `Cabang "${base}" belum punya commit. Buat commit awal (mis. README) di ${base} lebih dulu; GSE tidak pernah menulis langsung ke cabang utama.`);
     const baseSha = ref.data.object.sha;
@@ -55,6 +57,22 @@ export class Github {
     const tree = (await this.call<{ sha: string }>('POST', `/repos/${repo}/git/trees`, { base_tree: baseCommit.tree.sha, tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) })).data;
     const commit = (await this.call<{ sha: string }>('POST', `/repos/${repo}/git/commits`, { message, tree: tree.sha, parents: [baseSha] })).data;
     await this.call('POST', `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha: commit.sha });            // 422 bila cabang sudah ada -> 409, tidak menimpa
+    return { commitSha: commit.sha };
+  }
+  /**
+   * Commit LANJUTAN ke cabang fitur yang SUDAH ADA (GSE-05): satu commit atomik (tree dengan base_tree = tree kepala cabang; hapus = sha null),
+   * induk = kepala cabang, lalu ref dimajukan dengan force:false — bila cabang berubah di remote sejak dibaca (bukan fast-forward), GitHub
+   * menolak 422 → 409 dan TIDAK ada yang ditimpa. Cabang yang hilang → 422.
+   */
+  async commitToBranch(repo: string, branch: string, message: string, changes: Array<{ path: string; action: 'create' | 'update' | 'delete'; content?: string }>): Promise<{ commitSha: string }> {
+    const ref = await this.call<{ object: { sha: string } }>('GET', `/repos/${repo}/git/ref/heads/${enc(branch)}`, undefined, [200, 404]);
+    if (ref.status === 404) throw new ProblemException(422, 'validation-failed', 'Cabang fitur tidak ada di GitHub', `Cabang "${branch}" tidak ditemukan (dihapus setelah PR di-merge/ditutup?). Buat proyek scaffold baru.`);
+    const head = ref.data.object.sha;
+    const headCommit = (await this.call<{ tree: { sha: string } }>('GET', `/repos/${repo}/git/commits/${head}`)).data;
+    const tree = (await this.call<{ sha: string }>('POST', `/repos/${repo}/git/trees`, { base_tree: headCommit.tree.sha,
+      tree: changes.map((c) => (c.action === 'delete' ? { path: c.path, mode: '100644', type: 'blob', sha: null } : { path: c.path, mode: '100644', type: 'blob', content: c.content ?? '' })) })).data;
+    const commit = (await this.call<{ sha: string }>('POST', `/repos/${repo}/git/commits`, { message, tree: tree.sha, parents: [head] })).data;
+    await this.call('PATCH', `/repos/${repo}/git/refs/heads/${enc(branch)}`, { sha: commit.sha, force: false });
     return { commitSha: commit.sha };
   }
   async pullRequest(repo: string, head: string, base: string, title: string, body: string) {

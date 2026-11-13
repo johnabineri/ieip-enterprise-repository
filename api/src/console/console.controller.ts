@@ -122,9 +122,11 @@ export class ConsoleController {
     return this.db.tx(p, async (c) => {
       const r = await computeIka(c); const scored = r.entities.filter((e) => e.objects > 0);
       for (const e of scored) {
-        await c.query(`INSERT INTO console.ika_snapshot (entity_id, level, domain_levels, objects, taken_by) VALUES ($1,$2,$3::jsonb,$4,$5)
-          ON CONFLICT (snapshot_date, entity_id) DO UPDATE SET level = EXCLUDED.level, domain_levels = EXCLUDED.domain_levels, objects = EXCLUDED.objects, taken_by = EXCLUDED.taken_by, taken_at = clock_timestamp()`,
-          [e.id, e.level, JSON.stringify(Object.fromEntries(e.domains.map((d) => [d.domain, d.level]))), e.objects, p.userId]);
+        await c.query(`INSERT INTO console.ika_snapshot (entity_id, level, domain_levels, objects, taken_by, checks) VALUES ($1,$2,$3::jsonb,$4,$5,$6::jsonb)
+          ON CONFLICT (snapshot_date, entity_id) DO UPDATE SET level = EXCLUDED.level, domain_levels = EXCLUDED.domain_levels, objects = EXCLUDED.objects, taken_by = EXCLUDED.taken_by,
+            checks = EXCLUDED.checks, taken_at = clock_timestamp()`,
+          [e.id, e.level, JSON.stringify(Object.fromEntries(e.domains.map((d) => [d.domain, d.level]))), e.objects, p.userId,
+            JSON.stringify({ ...e.checks, kraGaps: e.gaps.kra.count, lineageGaps: e.gaps.lineage.count })]);
       }
       return { entities: scored.length, groupAverage: r.groupAverage };
     });
@@ -275,7 +277,7 @@ export class ConsoleController {
     return { api: m, db: { pingMs: db.ms, replication: db.replication }, targets,
       slo: [{ name: 'Ketersediaan API (non-5xx)', target: '99,9%', actual: m.requests ? Math.round((100 - m.errorRate) * 1000) / 1000 : null, ok: m.requests ? m.errorRate <= 0.1 : null },
             { name: 'Latensi p95', target: '≤ 400 ms', actual: m.requests ? m.p95Ms : null, ok: m.requests ? m.p95Ms <= 400 : null }],
-      note: 'Metrik in-memory proses API ini sejak start (bukan agregat lintas replika). Trace OpenTelemetry dan SLO per workspace belum tersedia.' };
+      note: 'Metrik in-memory layanan ini sejak start (per replika; bukan agregat). Agregat lintas replika, SLO per workspace, trace OpenTelemetry, dan log tersedia di Prometheus/Grafana/Tempo/Loki bila stack infra/ (Docker Compose) dijalankan; tanpa itu hanya angka proses ini.' };
   }
 
   // ================= kill-switch & log guardrail =================
