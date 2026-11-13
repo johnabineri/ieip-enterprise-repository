@@ -20,7 +20,7 @@ import { ProblemException } from '../common/problem';
  * (+ opsional EIO_SVC_<KODE>_TOKEN = Bearer). EIO_TIMEOUT_MS (default 10000, maks 60000).
  */
 
-export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 10_000, maxRetries: 2, maxTimeoutMs: 60_000 };
+export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 1_024, regexMaxRepeat: 100, regexMaxRules: 10, maxRetries: 2, maxTimeoutMs: 60_000 };
 
 export interface CanonField { name: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array'; required?: boolean; maxLength?: number; enum?: unknown[] }
 export interface Rule { field: string; op: string; value?: unknown; message?: string }
@@ -103,6 +103,10 @@ function compileRe2(src: string): RE2JS {
 /** Alasan pola regex aturan ditolak (atau null bila sah). */
 export function unsafeRegexReason(src: string): string | null {
   if (src.length > 200) return 'regex maksimum 200 karakter';
+  // Biaya RE2 = O(input × ukuran program); pengulangan berhitung besar ({999}) mengembangkan program.
+  // Batasi agar satu aturan ≤ beberapa ms pada input maksimum (diukur: {999} × 10.000 karakter ≈ 300 ms).
+  for (const m of src.matchAll(/\{(\d+)(?:,(\d*))?\}/g))
+    if (Number(m[1]) > EIO_LIMITS.regexMaxRepeat || Number(m[2] || 0) > EIO_LIMITS.regexMaxRepeat) return `pengulangan maksimum {${EIO_LIMITS.regexMaxRepeat}}`;
   try { compileRe2(src); return null; } catch (e) {
     const msg = e instanceof RE2JSException ? e.message.replace(/^error parsing regexp:\s*/, '') : 'pola tidak sah';
     return `pola tidak didukung RE2 (${msg.slice(0, 120)})`;
@@ -116,6 +120,9 @@ export function regexTest(src: string, value: string): boolean {
 
 /** L4: aturan pertama yang dilanggar (atau null). Field kosong hanya dilanggar oleh `required`. */
 export function evalRules(rules: Rule[], data: Record<string, unknown>): { rule: Rule; message: string } | null {
+  const regexRules = (rules ?? []).filter((r) => r?.op === 'regex');
+  if (regexRules.length > EIO_LIMITS.regexMaxRules)   // fail-closed (rute lama sebelum batas ini)
+    return { rule: regexRules[0], message: `rute memuat lebih dari ${EIO_LIMITS.regexMaxRules} aturan regex` };
   for (const r of rules ?? []) {
     const v = getPath(data, r.field);
     const fail = (why: string) => ({ rule: r, message: r.message || `${r.field}: ${why}` });

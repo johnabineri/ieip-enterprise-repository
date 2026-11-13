@@ -16,6 +16,8 @@ const KODE = /^[A-Z0-9][A-Z0-9_.-]*$/;
 
 /** Tolak pola regex berisiko ReDoS saat rute disimpan (evalRules tetap memeriksa ulang, fail-closed). */
 function assertSafeRules(rules?: Rule[]) {
+  if ((rules ?? []).filter((r) => r?.op === 'regex').length > EIO_LIMITS.regexMaxRules)
+    throw new ProblemException(422, 'unsafe-regex', `rules: maksimum ${EIO_LIMITS.regexMaxRules} aturan regex per rute`);
   for (const r of rules ?? []) {
     if (r?.op !== 'regex' || typeof r.value !== 'string') continue;
     const why = unsafeRegexReason(r.value);

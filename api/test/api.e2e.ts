@@ -2676,20 +2676,24 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
   });
   it('EIO regex RE2: linear-time pada pola ReDoS klasik; backreference/lookaround/tak sah ditolak saat simpan (422) dan evaluasi', async () => {
     const R = String.raw;
-    for (const bad of [R`(a)\1`, R`(?<n>a)\k<n>`, 'a(?=b)', 'a(?!b)', '(?<!x)y', '(?<=x)y', '(abc', 'a{1001}', 'x'.repeat(201)])
+    for (const bad of [R`(a)\1`, R`(?<n>a)\k<n>`, 'a(?=b)', 'a(?!b)', '(?<!x)y', '(?<=x)y', '(abc', 'a{1001}', 'a{101}', 'a{2,101}', '(?:[a-z]{30}){101}', 'x'.repeat(201)])
       expect([bad, unsafeRegexReason(bad)]).toEqual([bad, expect.any(String)]);
     const evil = ['^(a+)+$', '^(a|aa)*$', '^((a|aa))*$', R`^(\w*){2,}$`, R`\d*\d*\d*\d*x`, '^(.*a){12}$'];
     for (const ok of [...evil, R`^[A-Z]{2}-\d{4,8}$`, R`^(SO|PO)-\d+$`, R`^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`, '^(?:abc)+$', '^(?<kode>[A-Z]{2})-x$'])
       expect([ok, unsafeRegexReason(ok)]).toEqual([ok, null]);
-    // evaluasi: input jahat 10.000 karakter pada pola ReDoS klasik selesai linear (V8 backtracking akan menggantung)
+    // evaluasi: input jahat maksimum (1.024) pada pola ReDoS klasik & pola berprogram besar selesai linear (V8 backtracking akan menggantung)
+    const heavy = ['(?:a|b|ab|ba){100}[0-9]', '[a-z]{100}[a-y]{100}[0-9]', R`^(?:\w{10}){100}[0-9]$`];
     const t0 = Date.now();
-    for (const p of evil) expect(evalRules([{ field: 'x', op: 'regex', value: p }], { x: 'a'.repeat(9_999) + '!' })?.message).toMatch(/format tidak sesuai/);
-    expect(evalRules([{ field: 'x', op: 'regex', value: R`\d*\d*\d*\d*x` }], { x: '1'.repeat(9_999) })?.message).toMatch(/format tidak sesuai/);
-    expect(Date.now() - t0).toBeLessThan(3_000);
+    for (const p of [...evil, ...heavy]) expect(evalRules([{ field: 'x', op: 'regex', value: p }], { x: 'a'.repeat(1_023) + '!' })?.message).toMatch(/format tidak sesuai/);
+    expect(evalRules([{ field: 'x', op: 'regex', value: R`\d*\d*\d*\d*x` }], { x: '1'.repeat(1_024) })?.message).toMatch(/format tidak sesuai/);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    // maks 10 aturan regex per rute (fail-closed juga saat evaluasi)
+    const many = Array.from({ length: 11 }, () => ({ field: 'x', op: 'regex', value: 'a' }));
+    expect(evalRules(many, { x: 'a' })?.message).toMatch(/lebih dari 10 aturan regex/);
     expect(evalRules([{ field: 'x', op: 'regex', value: R`^(SO|PO)-\d+$` }], { x: 'SO-12' })).toBeNull();
     expect(evalRules([{ field: 'x', op: 'regex', value: R`\d+` }], { x: 'abc12' })).toBeNull();                       // semantik RegExp.test: cari di mana saja
     expect(evalRules([{ field: 'x', op: 'regex', value: 'a(?=b)' }], { x: 'ab' })?.message).toMatch(/pola aturan tidak sah/);   // fail-closed
-    expect(evalRules([{ field: 'x', op: 'regex', value: R`^\d+$` }], { x: '1'.repeat(10_001) })?.message).toMatch(/format tidak sesuai/);
+    expect(evalRules([{ field: 'x', op: 'regex', value: R`^\d+$` }], { x: '1'.repeat(1_025) })?.message).toMatch(/format tidak sesuai/);
     // API: simpan rute dengan pola yang tidak didukung RE2 → 422 unsafe-regex, baik POST maupun PATCH
     const C = (path: string) => `/api/v1/console${path}`;
     const cm = (await http().post(C('/eio/canonical-models')).set(as('app')).send({ kode: 'E2E-RX', nama: 'Model regex', fields: [{ name: 'kode', type: 'string' }] }).expect(201)).body;
@@ -2700,5 +2704,6 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     const rt = (await http().post(C('/eio/routes')).set(as('app')).send({ ...base, connectorId: con.id, rules: [{ field: 'kode', op: 'regex', value: '^[A-Z]+$' }] }).expect(201)).body;
     const etag = (await http().get(C(`/eio/routes/${rt.id}`)).set(as('app')).expect(200)).headers.etag;
     await http().patch(C(`/eio/routes/${rt.id}`)).set(as('app')).set('If-Match', etag).send({ rules: [{ field: 'kode', op: 'regex', value: 'x(?=y)' }] }).expect(422);
+    await http().patch(C(`/eio/routes/${rt.id}`)).set(as('app')).set('If-Match', etag).send({ rules: many.map((r) => ({ ...r, field: 'kode' })) }).expect(422);
   });
 });
