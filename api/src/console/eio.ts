@@ -1,3 +1,4 @@
+import { RE2JS, RE2JSException } from 're2js';
 import { ProblemException } from '../common/problem';
 
 /**
@@ -19,7 +20,7 @@ import { ProblemException } from '../common/problem';
  * (+ opsional EIO_SVC_<KODE>_TOKEN = Bearer). EIO_TIMEOUT_MS (default 10000, maks 60000).
  */
 
-export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 256, regexMaxQuantifiers: 3, maxRetries: 2, maxTimeoutMs: 60_000 };
+export const EIO_LIMITS = { bodyBytes: 65_536, responseBytes: 1_048_576, regexInput: 10_000, maxRetries: 2, maxTimeoutMs: 60_000 };
 
 export interface CanonField { name: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array'; required?: boolean; maxLength?: number; enum?: unknown[] }
 export interface Rule { field: string; op: string; value?: unknown; message?: string }
@@ -83,56 +84,34 @@ export function applyMap(map: Record<string, unknown>, src: unknown): Record<str
 }
 
 /**
- * Penjaga ReDoS untuk aturan `regex`: mesin RegExp V8 melakukan backtracking dan berjalan di event loop,
- * jadi pola berisiko ditolak SEBELUM dikompilasi (saat rute disimpan → 422, dan lagi saat dievaluasi →
- * fail-closed). Ditolak: backreference (\1, \k<…>), lookaround, dan kuantifier bersarang — grup yang
- * memuat kuantifier atau alternasi lalu dikuantifikasi lagi, mis. (a+)+, (a|aa)*, (\w*){2,}.
- * Konservatif: beberapa pola aman ikut tertolak; tulis ulang tanpa grup terkuantifikasi.
- * Kasus polinomial (\d*\d*\d*x) dibatasi lewat maks 3 kuantifier per pola + input ≤ 256 karakter.
- * BATAS JUJUR: ini heuristik di atas mesin backtracking, bukan jaminan linear — pengganti yang
- * semestinya adalah mesin linear-time (RE2/RE2JS), belum dipasang karena butuh dependensi baru.
+ * Aturan `regex` dievaluasi dengan RE2JS (port JS murni RE2): waktu LINEAR terhadap panjang input, tanpa
+ * backtracking — ReDoS tidak mungkin terlepas dari bentuk pola. Sintaks RE2 tidak mendukung backreference
+ * dan lookaround; pola itu (dan pola tidak sah lain) ditolak saat rute disimpan (422) dan lagi saat
+ * dievaluasi (fail-closed). Semantik = `RegExp.test` (cari di mana saja; pakai ^…$ untuk seluruh nilai).
  */
+const RE2_CACHE = new Map<string, RE2JS>();
+function compileRe2(src: string): RE2JS {
+  let re = RE2_CACHE.get(src);
+  if (!re) {
+    re = RE2JS.compile(src);
+    if (RE2_CACHE.size >= 500) RE2_CACHE.delete(RE2_CACHE.keys().next().value as string);
+    RE2_CACHE.set(src, re);
+  }
+  return re;
+}
+
+/** Alasan pola regex aturan ditolak (atau null bila sah). */
 export function unsafeRegexReason(src: string): string | null {
   if (src.length > 200) return 'regex maksimum 200 karakter';
-  type G = { quant: boolean; alt: boolean };
-  const stack: G[] = [{ quant: false, alt: false }];
-  const isQuantAt = (i: number) => src[i] === '*' || src[i] === '+' || src[i] === '?' || (src[i] === '{' && /^\{\d+(,\d*)?\}/.test(src.slice(i)));
-  let inClass = false, quantifiers = 0;
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (c === '\\') {
-      const n = src[i + 1] ?? '';
-      if (!inClass && (/[1-9]/.test(n) || n === 'k')) return 'backreference tidak diizinkan';
-      i++; continue;
-    }
-    if (inClass) { if (c === ']') inClass = false; continue; }
-    if (c === '[') { inClass = true; continue; }
-    if (c === '(') {
-      if (/^\(\?<?[=!]/.test(src.slice(i))) return 'lookaround tidak diizinkan';
-      stack.push({ quant: false, alt: false });
-      // lewati penanda grup (?:  atau (?<nama> — tanda '?' di sini bukan kuantifier
-      const m = /^\(\?(?::|<[A-Za-z_$][\w$]*>)/.exec(src.slice(i));
-      if (m) i += m[0].length - 1;
-      continue;
-    }
-    if (c === '|') { stack[stack.length - 1].alt = true; continue; }
-    if (c === ')') {
-      const g = stack.pop();
-      if (!g || !stack.length) return 'kurung tidak seimbang';
-      const parent = stack[stack.length - 1];
-      if (isQuantAt(i + 1) && (g.quant || g.alt)) return 'kuantifier bersarang tidak diizinkan';
-      // teruskan ke induk: ((a|aa))* dan ((a+))+ harus tetap tertangkap di tingkat luar
-      parent.alt ||= g.alt;
-      parent.quant ||= g.quant || isQuantAt(i + 1);
-      continue;
-    }
-    if (isQuantAt(i)) {
-      stack[stack.length - 1].quant = true;
-      // batasi derajat polinomial backtracking (mis. \d*\d*\d*\d*x); input juga dibatasi EIO_LIMITS.regexInput
-      if (++quantifiers > EIO_LIMITS.regexMaxQuantifiers) return `regex maksimum ${EIO_LIMITS.regexMaxQuantifiers} kuantifier`;
-    }
+  try { compileRe2(src); return null; } catch (e) {
+    const msg = e instanceof RE2JSException ? e.message.replace(/^error parsing regexp:\s*/, '') : 'pola tidak sah';
+    return `pola tidak didukung RE2 (${msg.slice(0, 120)})`;
   }
-  return null;
+}
+
+/** Cocokkan nilai dengan pola RE2 (dipanggil hanya setelah unsafeRegexReason = null). */
+export function regexTest(src: string, value: string): boolean {
+  return compileRe2(src).matcher(value).find();
 }
 
 /** L4: aturan pertama yang dilanggar (atau null). Field kosong hanya dilanggar oleh `required`. */
@@ -154,10 +133,8 @@ export function evalRules(rules: Rule[], data: Record<string, unknown>): { rule:
       case 'lte': if (!(typeof v === 'number' && v <= (r.value as number))) return fail(`harus ≤ ${r.value}`); break;
       case 'maxLength': if (!(typeof v === 'string' && v.length <= (r.value as number))) return fail(`maksimum ${r.value} karakter`); break;
       case 'regex': {
-        let re: RegExp;
         if (typeof r.value !== 'string' || unsafeRegexReason(r.value)) return fail('pola aturan tidak sah');
-        try { re = new RegExp(r.value); } catch { return fail('pola aturan tidak sah'); }
-        if (typeof v !== 'string' || v.length > EIO_LIMITS.regexInput || !re.test(v)) return fail('format tidak sesuai');
+        if (typeof v !== 'string' || v.length > EIO_LIMITS.regexInput || !regexTest(r.value, v)) return fail('format tidak sesuai');
         break;
       }
       default: return fail(`operator ${r.op} tidak dikenal`);
