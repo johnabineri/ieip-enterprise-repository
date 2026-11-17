@@ -4,6 +4,11 @@
 window.EAP_CONFIG = window.EAP_CONFIG || { apiUrl: "" };
 (function () {
   try {
+    // ?api= / ?oidc= (dan nilainya di sessionStorage) HANYA di host pengembangan. Di produksi tautan buatan penyerang tidak boleh mengganti basis API
+    // (token Bearer akan dikirim ke sana) atau issuer OIDC (halaman masuk palsu): override dibuang dan konfigurasi server (penimpa runtime) yang berlaku.
+    var h = location.hostname;
+    var dev = h === "localhost" || h === "127.0.0.1" || h === "[::1]" || /\.localhost$/.test(h);
+    if (!dev) { sessionStorage.removeItem("eap.api"); sessionStorage.removeItem("eap.oidc.issuer"); return; }
     var p = new URLSearchParams(location.search);
     if (p.get("api") !== null) sessionStorage.setItem("eap.api", p.get("api"));
     var s = sessionStorage.getItem("eap.api");

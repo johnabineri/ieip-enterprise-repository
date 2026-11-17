@@ -4,7 +4,7 @@
    dibuat dari token & komponen mockup (.card, .brand, .btn, .callout). */
 import * as React from 'react';
 import * as api from '@/lib/api';
-import { lastActionStatus, oidcClear, oidcEnabled, oidcHandleCallback, oidcLogin, oidcLogoutUrl } from '@/lib/oidc';
+import { lastActionStatus, oidcClear, oidcEnabled, oidcHandleCallback, oidcLogin, oidcLogoutUrl, safePath } from '@/lib/oidc';
 import { queryClient } from '@/lib/query';
 import { useSession } from '@/store/session';
 import { toast, useUi, type Theme } from '@/store/ui';
@@ -49,7 +49,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           // kembali ke halaman asal: "/" sendiri mengalihkan ke menu pertama, jadi cukup mengganti URL tidak memadai — muat halaman asal
           if (lastActionStatus === 'success') ss.set('eap.notice', t('Kata sandi diperbarui.'));
           else if (lastActionStatus === 'cancelled') ss.set('eap.notice', t('Ganti kata sandi dibatalkan.'));
-          if (back && back !== location.pathname && back !== '/') { location.replace(back); return; }
+          if (back && back !== location.pathname && back !== '/') { location.replace(safePath(back)); return; }
         } catch (e) { return useSession.getState().toLogin({ tone: 'bad', text: (e as Error).message }); }
       }
       const loggedOut = new URLSearchParams(location.search).has('logout');

@@ -64,6 +64,9 @@ async function tokenRequest(params: Record<string, string>) {
 /** Hasil aksi Keycloak terakhir (kc_action_status) pada callback ini — dibaca AuthGate untuk notifikasi. */
 export let lastActionStatus: string | null = null;
 
+/** Hanya path same-origin: diawali satu garis miring, bukan "//" atau garis-miring-balik (protocol-relative → open redirect); selain itu "/". */
+export const safePath = (p?: string | null): string => (typeof p === 'string' && p.startsWith('/') && !p.startsWith('//') && !p.startsWith('/\\') ? p : '/');
+
 export async function oidcHandleCallback(): Promise<string | null> {
   const q = new URLSearchParams(location.search);
   if (!q.has('code') && !q.has('error')) return null;
@@ -76,7 +79,7 @@ export async function oidcHandleCallback(): Promise<string | null> {
   storeTokens(await tokenRequest({
     grant_type: 'authorization_code', client_id: clientId(), code: q.get('code')!, redirect_uri: tx.redirect, code_verifier: tx.verifier,
   }), tx.nonce);
-  return tx.back || '/';
+  return safePath(tx.back);
 }
 
 let inflight: Promise<boolean> | null = null;
