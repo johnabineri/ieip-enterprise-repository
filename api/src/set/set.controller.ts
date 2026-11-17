@@ -12,10 +12,12 @@ class AssignRoleDto {
   @IsOptional() @IsISO8601() validUntil?: string;
 }
 class ActiveDto { @IsBoolean() isActive: boolean; }
+class PreassignDto { @IsUUID() cmpUserId: string; }
 
 /**
  * Administrasi otorisasi (set): akun, peran, izin, penugasan. Penulisan dijaga DB (trigger admin-only + fungsi definer):
- * hanya pemegang set.account.admin. Pengguna muncul di sini setelah login pertama (dibuat set.provision_user, tanpa peran).
+ * hanya pemegang set.account.admin. Akun terbentuk dengan dua cara: (1) login pertama (set.provision_user, tanpa peran), atau (2) POLA YANG DISARANKAN —
+ * admin memilih orang dari direktori CMP dan pra-tugaskan (set.preassign_user, 304): akun tertaut sejak awal, dapat diberi peran sebelum login.
  * Data pribadi tidak ada: nama tampilan dibaca dari ref.users (CMP).
  */
 @Controller('api/v1/set')
@@ -49,14 +51,41 @@ export class SetController {
       if (cur) { a.push(cur[0], cur[1]); w.push(`(COALESCE(ru.username::text, ''), su.id) > ($${a.length - 1}, $${a.length}::uuid)`); }
       a.push(limit + 1);
       const rows = (await c.query(
-        `SELECT su.id, su.is_active, su.last_login_at, su.created_at, ru.username, ru.display_name,
+        `SELECT su.id, su.is_active, su.last_login_at, su.created_at, ru.username, ru.display_name, su.cmp_user_id IS NOT NULL AS linked,
+                su.idp_subject LIKE 'pending:%' AS pending, CASE WHEN su.cmp_user_id IS NULL THEN left(su.idp_subject, 18) END AS subject,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id', ur.id, 'roleCode', r.role_code, 'entityScope', ur.entity_scope, 'validUntil', ur.valid_until) ORDER BY r.role_code)
                             FROM set.user_roles ur JOIN set.roles r ON r.id = ur.role_id WHERE ur.user_id = su.id AND ur.deleted_at IS NULL), '[]') AS assignments
            FROM set.users su LEFT JOIN ref.users ru ON ru.id = su.cmp_user_id
           WHERE ${w.join(' AND ')} ORDER BY COALESCE(ru.username::text, ''), su.id LIMIT $${a.length}`, a)).rows;
       const more = rows.length > limit; const data = (more ? rows.slice(0, limit) : rows).map((r) => ({
-        id: r.id, username: r.username, displayName: r.display_name, isActive: r.is_active, lastLoginAt: r.last_login_at, createdAt: r.created_at, assignments: r.assignments }));
+        id: r.id, username: r.username, displayName: r.display_name, isActive: r.is_active, lastLoginAt: r.last_login_at, createdAt: r.created_at, linked: r.linked, pending: r.pending, subject: r.subject, assignments: r.assignments }));
       return { data, nextCursor: more ? encodeKeyset(data[data.length - 1].username ?? '', data[data.length - 1].id) : null };
+    });
+  }
+
+  /** Direktori CMP (ref.users aktif) yang BELUM punya akun EAP — sumber pilihan untuk pra-tugas. `q` mencari username/nama; maks. 200. */
+  @Get('directory') @RequirePermission('set.account.admin')
+  directory(@CurrentUser() p: Principal, @Query() q: Record<string, string>) {
+    const limit = Math.min(200, Math.max(1, Number.parseInt(q.limit ?? '', 10) || 100));
+    const term = (q.q ?? '').trim();
+    return this.db.tx(p, async (c) => {
+      const a: unknown[] = [limit]; let f = '';
+      if (term) { a.push(`%${term.replace(/[\\%_]/g, (m) => `\\${m}`)}%`); f = `AND (r.username ILIKE $2 OR r.display_name ILIKE $2)`; }   // %, _ dan \ dalam kata kunci tidak jadi pola
+      const rows = (await c.query(
+        `SELECT r.id, r.username, r.display_name FROM ref.users r
+          WHERE r.is_active AND r.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM set.users s WHERE s.cmp_user_id = r.id AND s.deleted_at IS NULL) ${f}
+          ORDER BY r.username LIMIT $1`, a)).rows;
+      return { data: rows.map((r) => ({ id: r.id, username: r.username, displayName: r.display_name })) };
+    });
+  }
+
+  /** POLA YANG DISARANKAN: pra-tugaskan akun untuk orang di direktori CMP (tertaut sejak awal; pending sampai login pertama). Idempoten. */
+  @Post('users') @HttpCode(201) @RequirePermission('set.account.admin')
+  preassign(@CurrentUser() p: Principal, @Body() b: PreassignDto) {
+    return this.db.tx(p, async (c) => {
+      const id = (await c.query('SELECT set.preassign_user($1) AS id', [b.cmpUserId])).rows[0].id as string;
+      const r = (await c.query(`SELECT su.id, ru.username, ru.display_name, su.idp_subject LIKE 'pending:%' AS pending FROM set.users su JOIN ref.users ru ON ru.id = su.cmp_user_id WHERE su.id = $1`, [id])).rows[0];
+      return { id: r.id, username: r.username, displayName: r.display_name, pending: r.pending };
     });
   }
 

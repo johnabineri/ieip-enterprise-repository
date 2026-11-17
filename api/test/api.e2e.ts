@@ -2869,4 +2869,31 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
       for (const [k, v] of [['LLM_BASE_URL', keep.u], ['LLM_MODEL', keep.m], ['LLM_API_KEY', keep.k]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     }
   });
+  it('Akun: pra-tugas lewat direktori CMP (tertaut sejak awal) dan penanda akun yang belum tertaut/login', async () => {
+    const S = (p = '') => `/api/v1/set${p}`;
+    const cmpId = (await db<{ id: string }>('SELECT gen_random_uuid()::text AS id'))[0].id;
+    await refExec(`INSERT INTO ref.users (id, username, display_name, is_active, row_version) VALUES ($1, 'pra.api.user', 'Pra Pengguna API', true, 1)`, [cmpId]);
+
+    // direktori: hanya admin; hanya CMP aktif yang belum punya akun EAP; kata kunci aman dari pola LIKE
+    await http().get(S('/directory')).set(as('app')).expect(403);
+    expect((await http().get(S('/directory?q=pra%20pengguna')).set(as('sys')).expect(200)).body.data).toEqual([{ id: cmpId, username: 'pra.api.user', displayName: 'Pra Pengguna API' }]);
+    expect((await http().get(S('/directory?q=%25')).set(as('sys')).expect(200)).body.data).toEqual([]);                     // '%' bukan wildcard
+    // pra-tugas: izin, validasi, idempoten
+    await http().post(S('/users')).set(as('app')).send({ cmpUserId: cmpId }).expect(403);
+    await http().post(S('/users')).set(as('sys')).send({ cmpUserId: 'bukan-uuid' }).expect(400);
+    await http().post(S('/users')).set(as('sys')).send({ cmpUserId: '00000000-0000-4000-8000-00000000dead' }).expect(422);   // bukan pengguna CMP
+    const a1 = (await http().post(S('/users')).set(as('sys')).send({ cmpUserId: cmpId }).expect(201)).body;
+    expect(a1).toMatchObject({ username: 'pra.api.user', displayName: 'Pra Pengguna API', pending: true });
+    expect((await http().post(S('/users')).set(as('sys')).send({ cmpUserId: cmpId }).expect(201)).body.id).toBe(a1.id);       // idempoten
+    expect((await http().get(S('/directory?q=pra.api')).set(as('sys')).expect(200)).body.data).toEqual([]);                   // sudah punya akun
+    // peran dapat diberikan SEBELUM login; daftar akun menandai tertaut + menunggu login
+    await http().post(S('/user-roles')).set(as('sys')).send({ userId: a1.id, roleCode: 'ROLE_EAP_AUDITOR' }).expect(201);
+    // akun lama tanpa tautan CMP (mis. seed): username/nama kosong, ditandai belum tertaut + subjek terpotong
+    await db(`INSERT INTO set.users (idp_subject) VALUES ('sub-sem-tautan-e2e-0001')`);
+    const list = (await http().get(S('/users?limit=100')).set(as('sys')).expect(200)).body.data;
+    const pre = list.find((x: any) => x.id === a1.id); const orphan = list.find((x: any) => x.subject?.startsWith('sub-sem-tautan-e2'));
+    expect(pre).toMatchObject({ username: 'pra.api.user', linked: true, pending: true, lastLoginAt: null, subject: null });
+    expect(pre.assignments.map((x: any) => x.roleCode)).toEqual(['ROLE_EAP_AUDITOR']);
+    expect(orphan).toMatchObject({ username: null, displayName: null, linked: false, pending: false, lastLoginAt: null }); expect(orphan.subject).toHaveLength(18);
+  });
 });

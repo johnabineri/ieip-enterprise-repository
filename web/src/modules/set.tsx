@@ -44,10 +44,31 @@ function Org() {
 }
 
 /* ---------------------------------------------------------------- 5.2 akun ---------------------------------------------------------------- */
+/** Nama yang aman ditampilkan: username CMP, atau penanda akun yang belum tertaut (subjek IdP terpotong). */
+const accountName = (u: api.Row): string => u.username ?? (u.subject ? `${t('(belum tertaut ke CMP)')} ${u.subject}…` : t('Akun'));
+
+/** POLA YANG DISARANKAN: pra-tugaskan akun dengan memilih orang dari direktori CMP — tertaut sejak awal, peran dapat diberikan sebelum login. */
+async function addFromDirectory() {
+  let dir: api.Row[] = [];
+  try { dir = (await api.get<{ data: api.Row[] }>('/api/v1/set/directory', { limit: 200 })).data; } catch (e) { return toast(t('Gagal'), api.explain(e), 'error'); }
+  if (!dir.length) return toast(t('Tidak ada pengguna CMP yang dapat ditambahkan'), t('Semua pengguna CMP aktif sudah punya akun EAP.'), 'info');
+  formDialog({
+    title: t('Tambah akun dari CMP'), sub: 'POST /api/v1/set/users', submit: t('Tambah akun'),
+    intro: <div className="mb"><Callout tone="info">{t('Pilih orang dari direktori CMP. Akun langsung tertaut ke identitasnya dan peran dapat diberikan sebelum ia login; saat login pertama akun ini diambil alih otomatis. Akun baru tidak punya peran.')}</Callout></div>,
+    fields: [{ name: 'cmpUserId', label: t('Pengguna CMP'), type: 'select', req: true, full: true, options: [['', `— ${t('pilih')} —`], ...dir.map((d) => [d.id, `${d.username} · ${d.displayName ?? ''}`] as [string, string])] }],
+    onSubmit: async (v) => {
+      const r = await api.post<api.Row>('/api/v1/set/users', { cmpUserId: v.cmpUserId });
+      invalidateData(); toast(t('Akun ditambahkan'), `${r.username} — ${t('menunggu login pertama')}`, 'success');
+      openDrawer((close) => <UserDrawer id={r.id} close={close} />);
+    },
+  });
+}
+
 function UserDrawer({ id, close }: { id: string; close: () => void }) {
   const q = useQuery({ queryKey: ['set-users-all'], queryFn: () => api.all<api.Row>('/api/v1/set/users') });
   const roles = useQuery({ queryKey: ['set-roles'], queryFn: async () => (await api.get<{ data: api.Row[] }>('/api/v1/set/roles')).data });
   const u = q.data?.find((x) => x.id === id); const admin = can('set.account.admin');
+  const who = u ? accountName(u) : '';
   const [role, setRole] = React.useState(''); const [scope, setScope] = React.useState(''); const [until, setUntil] = React.useState('');
   const [ents, setEnts] = React.useState<api.Row[]>([]); const [err, setErr] = React.useState<string | null>(null); const [busy, setBusy] = React.useState(false);
   React.useEffect(() => { lookup('entities').then((m) => setEnts(m.rows)); }, []);
@@ -57,15 +78,18 @@ function UserDrawer({ id, close }: { id: string; close: () => void }) {
     setErr(null); if (!role) return setErr(t('Pilih peran.'));
     setBusy(true);
     try { await api.post('/api/v1/set/user-roles', { userId: id, roleCode: role, entityScope: scope || undefined, validUntil: until ? new Date(`${until}T23:59:59`).toISOString() : undefined });
-      toast(t('Peran ditugaskan'), `${u.username} ← ${role}`, 'success'); setRole(''); setScope(''); setUntil(''); refresh(); }
+      toast(t('Peran ditugaskan'), `${who} ← ${role}`, 'success'); setRole(''); setScope(''); setUntil(''); refresh(); }
     catch (e) { setErr(api.explain(e)); } finally { setBusy(false); }
   };
-  const revoke = (a: api.Row) => confirmDialog({ title: t('Cabut peran {0}?', a.roleCode), text: u.username, danger: true, ok: t('Cabut'), onOk: async () => { await api.del(`/api/v1/set/user-roles/${a.id}`); refresh(); toast(t('Peran dicabut'), a.roleCode, 'success'); } });
-  const setActive = (on: boolean) => confirmDialog({ title: on ? t('Aktifkan akun ini?') : t('Nonaktifkan akun ini?'), text: u.username, danger: !on, ok: on ? t('Aktifkan') : t('Nonaktifkan'),
-    onOk: async () => { await api.patch(`/api/v1/set/users/${id}`, { isActive: on }); refresh(); toast(t('Akun diperbarui'), `${u.username} → ${on ? 'active' : 'inactive'}`, 'success'); } });
+  const revoke = (a: api.Row) => confirmDialog({ title: t('Cabut peran {0}?', a.roleCode), text: who, danger: true, ok: t('Cabut'), onOk: async () => { await api.del(`/api/v1/set/user-roles/${a.id}`); refresh(); toast(t('Peran dicabut'), a.roleCode, 'success'); } });
+  const setActive = (on: boolean) => confirmDialog({ title: on ? t('Aktifkan akun ini?') : t('Nonaktifkan akun ini?'), text: who, danger: !on, ok: on ? t('Aktifkan') : t('Nonaktifkan'),
+    onOk: async () => { await api.patch(`/api/v1/set/users/${id}`, { isActive: on }); refresh(); toast(t('Akun diperbarui'), `${who} → ${on ? 'active' : 'inactive'}`, 'success'); } });
   return (
-    <Drawer title={u.displayName || u.username || t('Akun')} sub={u.username} wide close={close} footer={admin ? <Btn variant={u.isActive ? 'danger' : 'pri'} onClick={() => setActive(!u.isActive)}>{u.isActive ? t('Nonaktifkan akun') : t('Aktifkan akun')}</Btn> : undefined}>
-      <DL pairs={[[t('Nama pengguna'), u.username], [t('Nama'), u.displayName], [t('Status'), <Badge key="s" value={u.isActive ? 'active' : 'inactive'} />], [t('Login terakhir'), fmtDT(u.lastLoginAt)]]} />
+    <Drawer title={u.displayName || u.username || t('Akun belum tertaut ke CMP')} sub={u.username || u.subject} wide close={close} footer={admin ? <Btn variant={u.isActive ? 'danger' : 'pri'} onClick={() => setActive(!u.isActive)}>{u.isActive ? t('Nonaktifkan akun') : t('Aktifkan akun')}</Btn> : undefined}>
+      {!u.linked ? <div className="mb"><Callout tone="warn">{t('Akun ini belum tertaut ke identitas CMP (mis. dibuat dari data demo sebelum pengguna login). Nama dan username baru muncul setelah pengguna login pertama dengan username yang cocok. Selama belum tertaut, pencabutan otomatis dari sinkron mutasi pegawai CMP tidak dapat berlaku. Untuk akun baru, gunakan + Tambah dari CMP.')}</Callout></div>
+        : u.pending ? <div className="mb"><Callout tone="info">{t('Menunggu login pertama: identitas CMP sudah tertaut dan peran berlaku sejak sekarang. Saat orangnya login, akun ini diambil alih otomatis (akun dan peran yang sama).')}</Callout></div> : null}
+      <DL pairs={[[t('Nama pengguna'), u.username ?? '—'], [t('Nama'), u.displayName ?? '—'], [t('Status'), <Badge key="s" value={u.isActive ? 'active' : 'inactive'} />], [t('Login terakhir'), u.lastLoginAt ? fmtDT(u.lastLoginAt) : t('belum pernah login')],
+        ...(u.subject ? [[t('Subjek IdP'), <span key="sj" className="mono tiny">{u.subject}…</span>] as const] : [])]} />
       <Section title={`${t('Penugasan peran')} (${u.assignments.length})`}>
         <MiniTable rows={u.assignments} empty={t('Belum ada peran.')} columns={[
           { label: t('Peran'), render: (a: api.Row) => <Tag>{a.roleCode}</Tag> }, { label: t('Lingkup'), render: (a: api.Row) => a.entityScope || t('semua entitas') },
@@ -100,12 +124,14 @@ function RbacSync() {
 }
 
 function Users() {
-  return <GridPage title={t('Akun Pengguna')} description={t('Akun EAP (idp_subject terhubung ke identitas CMP). Akun baru tanpa peran sampai ditugaskan admin.')}
+  return <GridPage title={t('Akun Pengguna')} description={t('Akun EAP. Disarankan: tambahkan orang dari direktori CMP sebelum login pertama (+ Tambah dari CMP) supaya akun tertaut sejak awal; akun juga terbentuk otomatis saat login pertama (tanpa peran).')}
     path="/api/v1/set/users" exportName="akun" notice={<RbacSync />}
+    create={{ label: `+ ${t('Tambah dari CMP')}`, perm: 'set.account.admin', run: () => addFromDirectory() }}
     onDetail={(r) => openDrawer((close) => <UserDrawer id={r.id} close={close} />)}
-    columns={[col.mono('username', t('Nama pengguna')), col.strong('displayName', t('Nama')),
-      col.calc(t('Peran'), (r) => (r.assignments || []).map((a: api.Row) => a.roleCode).join(', '), { minWidth: 260 }), activeCol, col.dateTime('lastLoginAt', t('Login terakhir'))]}
-    titleOf={(r) => r.displayName || r.username || t('Akun')} />;
+    columns={[col.calc(t('Nama pengguna'), (r) => accountName(r), { cellClass: 'mono', maxWidth: 260 }), col.calc(t('Nama'), (r) => r.displayName ?? '—', { cellStyle: { fontWeight: 600 } }),
+      col.calc(t('Peran'), (r) => (r.assignments || []).map((a: api.Row) => a.roleCode).join(', '), { minWidth: 260 }), activeCol,
+      col.calc(t('Login terakhir'), (r) => (r.lastLoginAt ? fmtDT(r.lastLoginAt) : r.pending ? t('menunggu login pertama') : t('belum pernah login')), { maxWidth: 210 })]}
+    titleOf={(r) => r.displayName || accountName(r)} />;
 }
 
 /* ---------------------------------------------------------------- 5.3 peran ---------------------------------------------------------------- */
