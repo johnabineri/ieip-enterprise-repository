@@ -1,0 +1,3 @@
+/* HANYA untuk entri mandiri (src/app/layout.tsx). Bukan bagian eap.css karena menyentuh elemen di luar .eap-root: bila EAP dimuat sebagai remote
+   di bawah Host, berkas ini TIDAK diimpor sehingga Host tidak terpengaruh. Setara `html,body{margin:0;height:100%}` di mockup. */
+html, body { margin: 0; height: 100%; }

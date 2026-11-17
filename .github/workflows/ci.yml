@@ -85,6 +85,40 @@ jobs:
         run: npm test
 
   # ---------------------------------------------------------------------------
+  # Job 1b — eap/web (SPA Next.js): typecheck (termasuk uji Playwright e2e/), kamus i18n (0 kunci hilang) dan build ekspor statis.
+  # Uji ber-login Playwright butuh stack penuh → dijalankan di infra/.github/workflows/images.yml (job smoke, langkah "Uji web (Playwright)").
+  # ---------------------------------------------------------------------------
+  web:
+    name: EAP web — typecheck, i18n, build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout EAP
+        uses: actions/checkout@v4
+
+      - name: Siapkan Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Web — install
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Web — typecheck (src + e2e)
+        working-directory: web
+        run: npm run typecheck
+
+      - name: "Web — kamus i18n (UI dua bahasa, tanpa teks yang belum diterjemahkan ke EN)"
+        working-directory: web
+        run: npm run i18n:check
+
+      - name: Web — build (ekspor statis)
+        working-directory: web
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
   # Job 2 — gerbang konsistensi EAP ↔ CMP (butuh repositori saudara CMP).
   # ---------------------------------------------------------------------------
   cross-check:

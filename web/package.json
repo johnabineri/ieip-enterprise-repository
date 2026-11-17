@@ -1,0 +1,33 @@
+{
+  "name": "eap-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SAORAJA EAP — SPA (Next.js App Router, ekspor statis); tampilan = mockup eap/ui (CSS diturunkan & dilingkup .eap-root)",
+  "scripts": {
+    "dev": "next dev -p 8778",
+    "build": "next build && node scripts/flatten-rsc.mjs",
+    "typecheck": "tsc --noEmit",
+    "i18n:check": "node scripts/i18n-check.mjs",
+    "serve": "npx --yes serve@14.2.4 out -l 8778",
+    "styles": "node scripts/scope-css.mjs ../ui/assets/styles.css src/styles/eap.css",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:report": "playwright show-report e2e/playwright-report"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.107.1",
+    "ag-grid-community": "36.3.0",
+    "ag-grid-react": "36.3.0",
+    "lucide-react": "^1.66.0",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zustand": "5.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "22.10.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}

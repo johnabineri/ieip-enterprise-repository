@@ -1,0 +1,70 @@
+/* Tambahan khusus aplikasi React di atas eap.css (yang DITURUNKAN dari mockup). Semua aturan di bawah .eap-root agar tidak bocor ke Host.
+   Hanya hal yang tidak ada di mockup: skeleton, kulit AG Grid yang menyamai table.tbl, layar masuk, sorotan fokus baris. */
+.eap-root {
+  /* ---------- skeleton (stack.md: skeleton loader saat memuat) ---------- */
+  .skel { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-2) 50%, var(--surface-3) 75%); background-size: 200% 100%; animation: eap-shimmer 1.3s linear infinite; }
+  @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+
+  /* ---------- layar masuk (mockup tidak punya; memakai token & komponen mockup) ---------- */
+  .login { min-height: var(--eap-height, 100vh); display: grid; place-items: center; padding: 16px; background: var(--brand); }
+  .login .card { width: min(400px, 100%); padding: 24px; }
+  .login .brand { color: var(--text); min-width: 0; margin-bottom: 18px; }
+  .login .brand small { opacity: .7; }
+
+  /* ---------- AG Grid disamakan dengan table.tbl (header 11px kapital, sel 13px, garis bawah, hover surface-2) ---------- */
+  .gridbox { height: calc(var(--eap-height, 100vh) - 292px); min-height: 360px; }
+  .gridbox .ag-root-wrapper { border: 0; border-radius: 0; }
+  .gridbox .ag-header-cell-text { text-transform: uppercase; letter-spacing: .05em; }
+  .gridbox .ag-cell { display: flex; align-items: center; line-height: 1.5; }
+  .gridbox .ag-cell .ag-cell-value, .gridbox .ag-cell .ag-cell-wrapper { min-width: 0; max-width: 100%; }
+  .gridbox .ag-cell:not(.ag-cell-wrap-text) .ag-cell-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gridbox .ag-cell.ag-right-aligned-cell { justify-content: flex-end; }
+  .gridbox .ag-cell.num { font-variant-numeric: tabular-nums; }
+  .gridbox .ag-cell-wrap-text { white-space: normal; word-break: normal; overflow-wrap: anywhere; padding-top: 9px; padding-bottom: 9px; line-height: 1.5; }
+  .gridbox .ag-cell .sub { display: block; font-size: 11px; color: var(--muted); font-weight: 400; }
+  .gridbox .ag-row { cursor: pointer; }
+  .gridbox .ag-row-hover::before, .gridbox .ag-row:hover::before { background: var(--surface-2); }
+  .gridbox .ag-overlay-no-rows-center { color: var(--muted); font-size: 13px; }
+
+  /* ---------- lain-lain ---------- */
+  .toolbar .count { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+  .toolbar .count + .btn { margin-left: 0; }
+  .toolbar .select { width: auto; max-width: 220px; }
+  .search .input { width: 100%; }
+  .toast { cursor: pointer; }
+  .pop .card-bd .row .avatar { flex: none; }
+  .nav a { cursor: pointer; }
+  a.chip { display: inline-flex; align-items: center; text-decoration: none; }
+  a.chip:hover { text-decoration: none; background: var(--surface-3); }
+  .tbl td.mono, .tbl td .mono { font-family: var(--mono); font-size: .86em; }
+  .btn { text-decoration: none; }
+  .btn:hover { text-decoration: none; }
+  .drawer-hd .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .reason { margin-top: 12px; }
+
+  /* ---------- layout Header 1 (keputusan pengguna, eap/CLAUDE.md): header penuh h-12; sel brand selebar panel menu (248px / 60px dilipat) + ◧ pelipat;
+     menu = ikon + label (tanpa nomor layar). Menimpa nilai mockup (header 56px) hanya di sini — eap.css tetap turunan mockup. ---------- */
+  .shell { grid-template-rows: 48px 1fr; }
+  .hdr { gap: 8px; padding: 0 12px 0 0; }
+  .hdr .brand { box-sizing: border-box; width: 248px; min-width: 248px; height: 100%; padding: 0 14px; border-right: 1px solid rgba(255, 255, 255, .1); transition: width .18s ease, min-width .18s ease; overflow: hidden; }
+  .hdr .brand-mark { width: 28px; height: 28px; flex: none; }
+  .hdr .brand-txt { min-width: 0; white-space: nowrap; }
+  .hdr .menu-toggle { margin-left: 4px; }
+  .hdr .hdr-btn svg { flex: none; }
+  .hdr .lang-btn { gap: 2px; padding: 0 9px; font-size: 11px; letter-spacing: .04em; }
+  .hdr .lang-btn b { font-weight: 600; opacity: .55; }
+  .hdr .lang-btn b.on { opacity: 1; color: #fff; }
+  &.nav-collapsed .hdr .brand { width: 60px; min-width: 60px; padding: 0 15px; }
+  &.nav-collapsed .hdr .brand-txt { display: none; }
+  .nav a .ic { width: 20px; height: 20px; flex: none; display: inline-grid; place-items: center; color: var(--muted); }
+  .nav a:hover .ic { color: var(--text); }
+  .nav a.on .ic { color: var(--accent-text); }
+  &.nav-collapsed .nav a { justify-content: center; padding: 9px 2px; }
+  &.nav-collapsed .nav a .ic { width: 22px; height: 22px; }
+  .gridbox { height: calc(var(--eap-height, 100vh) - 284px); }
+  @media (max-width: 860px) {
+    .hdr .brand { width: auto; min-width: 0; border-right: 0; padding: 0 8px 0 12px; }
+    .nav { top: 48px; }
+    &.nav-collapsed .hdr .brand-txt { display: block; }
+  }
+}
