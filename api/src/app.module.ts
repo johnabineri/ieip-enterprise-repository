@@ -1,9 +1,9 @@
-import { MiddlewareConsumer, Module, NestModule, RequestMethod, Type, ValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { Module, OnModuleInit, Type, ValidationPipe } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE, HttpAdapterHost } from '@nestjs/core';
 import { AuditController } from './audit/audit.controller';
 import { AuthGuard } from './auth/auth';
 import { NoStoreInterceptor } from './common/no-store';
-import { securityHeaders } from './common/security-headers';
+import { installFastifyHooks } from './common/fastify';
 import { ProblemFilter } from './common/problem';
 import { DbModule } from './db/db.module';
 import { ApplicationsController } from './eaw/applications.controller';
@@ -18,7 +18,7 @@ import { RelationsController } from './eaw/relations.controller';
 import { WorkflowController } from './eaw/workflow.controller';
 import { ArbController } from './gov/arb.controller';
 import { ConsoleController } from './console/console.controller';
-import { MetricsController, metricsMiddleware } from './console/metrics';
+import { MetricsController } from './console/metrics';
 import { ReqController } from './req/req.controller';
 import { RoadmapController } from './eaw/roadmap.controller';
 import { GseController } from './gse/gse.controller';
@@ -65,8 +65,9 @@ export function appModuleFor(service: ServiceName): Type {
       { provide: APP_PIPE, useValue: new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: false }) },
     ],
   })
-  class ServiceModule implements NestModule {
-    configure(consumer: MiddlewareConsumer) { consumer.apply(securityHeaders, metricsMiddleware).forRoutes({ path: '{*splat}', method: RequestMethod.ALL }); }
+  class ServiceModule implements OnModuleInit {
+    constructor(private readonly host: HttpAdapterHost) {}
+    onModuleInit() { installFastifyHooks(this.host.httpAdapter.getInstance()); }   // header keamanan + metrik (sebelum ready())
   }
   Object.defineProperty(ServiceModule, 'name', { value: `AppModule_${service}` });
   return ServiceModule;

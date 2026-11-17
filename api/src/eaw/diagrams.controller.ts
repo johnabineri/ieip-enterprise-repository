@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
 import { IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -140,7 +140,7 @@ export class DiagramsController {
   async get(@CurrentUser() p: Principal, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query(`${SEL} WHERE d.id = $1 AND d.deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('diagram tidak ditemukan atau di luar cakupan akses');
-    res.setHeader('ETag', etagOf(r.row_version));
+    res.header('ETag', etagOf(r.row_version));
     return dto(r);
   }
 
@@ -150,7 +150,7 @@ export class DiagramsController {
     return this.db.tx(p, async (c) => {
       await checkBindings(c, content);
       const id = (await c.query('INSERT INTO eaw.diagram (entity_id, framework_id, nama, content) VALUES ($1,$2,$3,$4::jsonb) RETURNING id', [b.entityId, b.frameworkId ?? null, b.nama, JSON.stringify(content)])).rows[0].id;
-      const r = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(r.row_version)); return dto(r);
+      const r = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.header('ETag', etagOf(r.row_version)); return dto(r);
     });
   }
 
@@ -164,7 +164,7 @@ export class DiagramsController {
       assertVersion(v, cur.row_version);
       await checkBindings(c, content);
       await c.query('UPDATE eaw.diagram SET nama = COALESCE($2, nama), framework_id = COALESCE($3, framework_id), content = $4::jsonb WHERE id = $1', [id, b.nama ?? null, b.frameworkId ?? null, JSON.stringify(content)]);
-      const r = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(r.row_version)); return dto(r);
+      const r = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.header('ETag', etagOf(r.row_version)); return dto(r);
     });
   }
 
@@ -204,7 +204,7 @@ export class DiagramsController {
       }
       const norm = normalize(content);
       await c.query('UPDATE eaw.diagram SET content = $2::jsonb WHERE id = $1', [id, JSON.stringify(norm)]);
-      const row = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(row.row_version));
+      const row = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.header('ETag', etagOf(row.row_version));
       return { ...dto(row), imported: { nodes: added, edges } };
     });
   }
@@ -237,7 +237,7 @@ export class DiagramsController {
         if (!done) skipped.push({ edge: e.id, reason: why });
       }
       await c.query('UPDATE eaw.diagram SET content = $2::jsonb WHERE id = $1', [id, JSON.stringify(content)]);
-      const row = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(row.row_version));
+      const row = (await c.query(`${SEL} WHERE d.id = $1`, [id])).rows[0]; res.header('ETag', etagOf(row.row_version));
       return { ...dto(row), sync: { created: created.length, skipped } };
     });
   }
@@ -246,7 +246,7 @@ export class DiagramsController {
   async svg(@CurrentUser() p: Principal, @Param('id') id: string, @Res() res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query(`${SEL} WHERE d.id = $1 AND d.deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('diagram tidak ditemukan atau di luar cakupan akses');
-    res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${slug(r.nama)}.svg"`); res.send(toSvg(r.content, r.nama));
+    res.header('Content-Type', 'image/svg+xml; charset=utf-8'); res.header('Content-Disposition', `attachment; filename="${slug(r.nama)}.svg"`); res.send(toSvg(r.content, r.nama));
   }
   @Get(':id/exchange') @RequirePermission('eaw.model.read')
   async xml(@CurrentUser() p: Principal, @Param('id') id: string, @Res() res: Response) {
@@ -259,8 +259,8 @@ export class DiagramsController {
       const v = await validateExchangeXsd(xml);
       if (!v.valid) throw new ProblemException(500, 'internal', 'Ekspor Exchange XML tidak sah terhadap XSD', v.errors.slice(0, 5).map((e) => `${e.line ? `baris ${e.line}: ` : ''}${e.message}`).join(' | '));
     } catch (e) { if (e instanceof XsdUnavailable) status = 'not-validated'; else throw e; }
-    res.setHeader('X-ArchiMate-XSD', `${status}; schema="archimate3_Diagram.xsd 3.1"`);
-    res.setHeader('Content-Type', 'application/xml; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${slug(r.nama)}.xml"`); res.send(xml);
+    res.header('X-ArchiMate-XSD', `${status}; schema="archimate3_Diagram.xsd 3.1"`);
+    res.header('Content-Type', 'application/xml; charset=utf-8'); res.header('Content-Disposition', `attachment; filename="${slug(r.nama)}.xml"`); res.send(xml);
   }
 }
 type DN = { objectType?: string; objectId?: string };

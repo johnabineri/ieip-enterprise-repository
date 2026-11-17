@@ -3,7 +3,7 @@ import { ProblemException as _PE } from '../common/problem';
 import { configuredProvider, requireProvider } from '../gse/git-provider';
 import { adrFilePath, adrMarkdown, AdrDoc, sha256 as adrSha } from './adr-markdown';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, pageLimit, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -100,7 +100,7 @@ export class ReferencesController {
   async get(@CurrentUser() p: Principal, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query(`SELECT ${REF} FROM eaw.reference WHERE id = $1 AND deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('referensi tidak ditemukan atau di luar cakupan akses');
-    res.setHeader('ETag', etagOf(r.row_version));
+    res.header('ETag', etagOf(r.row_version));
     return refDto(r);
   }
 
@@ -218,7 +218,7 @@ export class AdrsController {
     const r = await this.db.tx(p, async (c) => (await c.query(
       `SELECT ${ADR} FROM eaw.adr WHERE deleted_at IS NULL AND (${/^[0-9a-f-]{36}$/i.test(k) ? 'id = $1::uuid' : 'adr_code = $1'})`, [k])).rows[0]);
     if (!r) throw new NotFoundException('ADR tidak ditemukan');
-    res.setHeader('ETag', etagOf(r.row_version));
+    res.header('ETag', etagOf(r.row_version));
     return adrDto(r);
   }
 

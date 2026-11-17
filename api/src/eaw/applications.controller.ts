@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { IsBoolean, IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, decodeKeyset, encodeKeyset, etagOf, pageLimit, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -125,7 +125,7 @@ export class ApplicationsController {
   async get(@CurrentUser() p: Principal, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
     const row = await this.db.tx(p, async (c) => (await c.query(`SELECT ${COLS} ${FROM} WHERE a.id = $1 AND a.deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!row) throw new NotFoundException('aplikasi tidak ditemukan atau di luar cakupan akses');
-    res.setHeader('ETag', etagOf(row.row_version));
+    res.header('ETag', etagOf(row.row_version));
     return applicationDto(row);
   }
 
@@ -141,7 +141,7 @@ export class ApplicationsController {
           b.ownerBisnis, b.timPengembang, b.risikoAi, b.slo, b.lifecycle ?? null, b.kritikalitas ?? null, b.referensiId ?? null, b.entityId,
           b.jenisNode ?? (b.platform ? 'workspace' : 'platform'), b.uiStandard ?? null, b.techStack ?? null, b.arbClearanceId ?? null, b.adopsi ?? null]);
       const row = (await c.query(`SELECT ${COLS} ${FROM} WHERE a.id = $1`, [ins.rows[0].id])).rows[0];
-      res.setHeader('ETag', etagOf(row.row_version));
+      res.header('ETag', etagOf(row.row_version));
       return applicationDto(row);
     });
   }
@@ -158,7 +158,7 @@ export class ApplicationsController {
       if (!keys.length) throw new ProblemException(422, 'validation-failed', 'Tidak ada perubahan');
       await c.query(`UPDATE eaw.application SET ${keys.map((k, i) => `${COLUMN_OF[k]} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...keys.map((k) => (b as any)[k])]);
       const row = (await c.query(`SELECT ${COLS} ${FROM} WHERE a.id = $1`, [id])).rows[0];
-      res.setHeader('ETag', etagOf(row.row_version));
+      res.header('ETag', etagOf(row.row_version));
       return applicationDto(row);
     });
   }
@@ -177,7 +177,7 @@ export class ApplicationsController {
       if (cur.jenis_node !== 'workspace') throw new ProblemException(422, 'validation-failed', 'Hanya workspace yang dapat ditempatkan di platform');
       await c.query('UPDATE eaw.application SET platform = $2 WHERE id = $1', [id, b.platform]);
       const row = (await c.query(`SELECT ${COLS} ${FROM} WHERE a.id = $1`, [id])).rows[0];
-      res.setHeader('ETag', etagOf(row.row_version));
+      res.header('ETag', etagOf(row.row_version));
       return applicationDto(row);
     });
   }

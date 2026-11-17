@@ -9,7 +9,7 @@ const routes = new Map<string, Route>();
 let total = 0, errors5xx = 0;
 const all: number[] = [];
 
-// ---- registri Prometheus (histogram latensi + counter per layanan/metode/rute/status); kardinalitas rendah: rute = pola Express, tak cocok = "unmatched" ----
+// ---- registri Prometheus (histogram latensi + counter per layanan/metode/rute/status); kardinalitas rendah: rute = pola rute Fastify, tak cocok = "unmatched" ----
 const BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 interface Prom { count: number; sum: number; buckets: number[] }
 const prom = new Map<string, Prom>();
@@ -21,22 +21,16 @@ const pct = (a: number[], p: number) => { if (!a.length) return 0; const s = [..
 
 /**
  * Metrik latensi/galat NYATA proses ini (in-memory sejak start; per replika) + registri Prometheus untuk /metrics.
- * Dipasang sebagai MIDDLEWARE (bukan interceptor) agar permintaan yang ditolak guard autentikasi (401) dan rute tak dikenal (404) ikut terhitung.
+ * Dipanggil dari hook Fastify `onResponse` (common/fastify.ts), bukan interceptor, agar permintaan yang ditolak guard autentikasi (401) dan rute tak dikenal (404) ikut terhitung.
  */
-export function metricsMiddleware(req: any, res: any, next: () => void) {
-  const t0 = performance.now();
-  res.once('finish', () => {                       // status final setelah filter galat (SQLSTATE→4xx dst.); req.route terisi setelah routing
-    const path: string = req.originalUrl?.split('?')[0] ?? req.path ?? '';
-    if (path === '/metrics' || path.startsWith('/health')) return;
-    const ms = performance.now() - t0; const status: number = res.statusCode; const pattern: string = req.route?.path ?? 'unmatched';
-    const key = `${req.method} ${pattern}`;
-    const r = routes.get(key) ?? { count: 0, errors: 0, durs: [] }; routes.set(key, r);
-    r.count++; total++; push(r.durs, ms); push(all, ms);
-    if (status >= 500) { r.errors++; errors5xx++; }
-    const k = promKey(req.method, pattern, status); const p = prom.get(k) ?? { count: 0, sum: 0, buckets: BUCKETS.map(() => 0) }; prom.set(k, p);
-    p.count++; p.sum += ms / 1000; BUCKETS.forEach((b, i) => { if (ms / 1000 <= b) p.buckets[i]++; });
-  });
-  next();
+export function recordRequest(method: string, path: string, pattern: string, status: number, ms: number) {
+  if (path === '/metrics' || path.startsWith('/health')) return;
+  const key = `${method} ${pattern}`;
+  const r = routes.get(key) ?? { count: 0, errors: 0, durs: [] }; routes.set(key, r);
+  r.count++; total++; push(r.durs, ms); push(all, ms);
+  if (status >= 500) { r.errors++; errors5xx++; }
+  const k = promKey(method, pattern, status); const p = prom.get(k) ?? { count: 0, sum: 0, buckets: BUCKETS.map(() => 0) }; prom.set(k, p);
+  p.count++; p.sum += ms / 1000; BUCKETS.forEach((b, i) => { if (ms / 1000 <= b) p.buckets[i]++; });
 }
 
 export function snapshot() {

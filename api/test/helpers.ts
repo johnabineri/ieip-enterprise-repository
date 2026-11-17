@@ -3,6 +3,9 @@ import { readdirSync } from 'fs';
 import { join } from 'path';
 import { Client } from 'pg';
 import { SignJWT } from 'jose';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { TestingModule } from '@nestjs/testing';
+import { fastifyAdapter } from '../src/common/fastify';
 
 export const TEST_DB = process.env.API_TEST_DB ?? 'kalla_eap_api_test';
 export const HS_SECRET = 'test-secret-test-secret-test-secret-123';
@@ -84,4 +87,12 @@ export async function tokenFor(name: string, o: { lifetimeS?: number; username?:
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT(claims).setProtectedHeader({ alg: 'HS256' }).setSubject(o.sub ?? `sub-${name}`).setIssuedAt(now)
     .setExpirationTime(now + (o.lifetimeS ?? 600)).sign(new TextEncoder().encode(o.secret ?? HS_SECRET));
+}
+
+/** Aplikasi Nest di atas Fastify dengan konfigurasi yang SAMA seperti main.ts; `ready()` wajib sebelum supertest memakai getHttpServer(). */
+export async function createApp(mod: TestingModule): Promise<NestFastifyApplication> {
+  const app = mod.createNestApplication<NestFastifyApplication>(fastifyAdapter());
+  await app.init();
+  await app.getHttpAdapter().getInstance().ready();
+  return app;
 }

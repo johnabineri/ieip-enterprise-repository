@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { Body, Controller, Get, HttpCode, Post, Query, Res } from '@nestjs/common';
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { assertCan, CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { ProblemException } from '../common/problem';
 import { DbService } from '../db/db.service';
@@ -80,7 +80,7 @@ export class ImportController {
     let head: string[], ex: string[];
     if (type === 'relations') { head = ['sumberType', 'sumberRef', 'targetType', 'targetRef', 'tipe']; ex = ['application', 'ASI', 'service', 'Penjualan Kendaraan', 'serving']; }
     else { const cfg = CONFIGS[type]; head = ['entityCode', ...cfg.cols.map((c) => c.name), 'referensiKode', ...(cfg.hasParent ? ['parentNama'] : [])]; ex = ['KALLA', ...cfg.cols.map((c) => c.example), '', ...(cfg.hasParent ? [''] : [])]; }
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="template-${type}.csv"`);
+    res.header('Content-Type', 'text/csv; charset=utf-8'); res.header('Content-Disposition', `attachment; filename="template-${type}.csv"`);
     res.send(toCsvLine(head) + '\n' + toCsvLine(ex) + '\n');
   }
 

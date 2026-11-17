@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Res } from '@nestjs/common';
 import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -96,7 +96,7 @@ export class RoadmapController {
       assertVersion(v, cur.row_version);
       await c.query(`UPDATE eaw.roadmap_phase SET nama = COALESCE($2, nama), deskripsi = COALESCE($3, deskripsi), urutan = COALESCE($4, urutan), mulai = COALESCE($5::date, mulai), selesai = COALESCE($6::date, selesai) WHERE id = $1`,
         [id, b.nama?.trim() ?? null, b.deskripsi ?? null, b.urutan ?? null, b.mulai ?? null, b.selesai ?? null]);
-      const r = (await c.query(`${PHASE_SQL} WHERE id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(r.row_version)); return phaseDto(r);
+      const r = (await c.query(`${PHASE_SQL} WHERE id = $1`, [id])).rows[0]; res.header('ETag', etagOf(r.row_version)); return phaseDto(r);
     });
   }
 
@@ -128,7 +128,7 @@ export class RoadmapController {
       await c.query(`UPDATE eaw.roadmap_item SET phase_id = COALESCE($2, phase_id), jenis = COALESCE($3, jenis), judul = COALESCE($4, judul), catatan = COALESCE($5, catatan), target = COALESCE($6::date, target),
           status = COALESCE($7, status), object_type = COALESCE($8, object_type), object_id = COALESCE($9, object_id) WHERE id = $1`,
         [id, b.phaseId ?? null, b.jenis ?? null, b.judul?.trim() ?? null, b.catatan ?? null, b.target ?? null, b.status ?? null, b.objectType ?? null, b.objectId ?? null]);
-      const r = (await c.query(`${ITEM_SQL} WHERE i.id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(r.row_version)); return itemDto(r, today);
+      const r = (await c.query(`${ITEM_SQL} WHERE i.id = $1`, [id])).rows[0]; res.header('ETag', etagOf(r.row_version)); return itemDto(r, today);
     });
   }
 

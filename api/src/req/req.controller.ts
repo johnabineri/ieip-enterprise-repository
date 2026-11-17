@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Res } from '@nestjs/common';
 import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { pageLimit, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -132,7 +132,7 @@ export class ReqController {
       ? (await c.query('SELECT * FROM req.story WHERE session_id = $1 AND deleted_at IS NULL ORDER BY created_at', [uuidOr400(sessionId, 'sessionId')])).rows
       : (await c.query('SELECT * FROM req.story WHERE deleted_at IS NULL ORDER BY created_at')).rows);
     if (!rows.length) throw new ProblemException(404, 'not-found', 'Belum ada User Story untuk diekspor');
-    res.setHeader('Content-Type', 'text/markdown; charset=utf-8'); res.setHeader('Content-Disposition', 'attachment; filename="requirements.md"');
+    res.header('Content-Type', 'text/markdown; charset=utf-8'); res.header('Content-Disposition', 'attachment; filename="requirements.md"');
     res.send(storyMarkdown(rows));
   }
 

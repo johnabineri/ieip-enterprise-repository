@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Res } from '@nestjs/common';
 import { IsIn, IsOptional, IsUUID, ValidateIf } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -80,9 +80,9 @@ export class PublisherController {
   async content(@CurrentUser() p: Principal, @Param('id') id: string, @Res() res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query('SELECT scope_type, format, versi, title, content, sha256 FROM eaw.publication WHERE id = $1', [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('dokumen tidak ditemukan');
-    res.setHeader('Content-Type', r.format === 'markdown' ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="dokumen-arsitektur-v${r.versi}.${r.format === 'markdown' ? 'md' : 'html'}"`);
-    res.setHeader('X-Content-SHA256', r.sha256); res.setHeader('X-Content-Type-Options', 'nosniff'); res.send(r.content);
+    res.header('Content-Type', r.format === 'markdown' ? 'text/markdown; charset=utf-8' : 'text/html; charset=utf-8');
+    res.header('Content-Disposition', `attachment; filename="dokumen-arsitektur-v${r.versi}.${r.format === 'markdown' ? 'md' : 'html'}"`);
+    res.header('X-Content-SHA256', r.sha256); res.header('X-Content-Type-Options', 'nosniff'); res.send(r.content);
   }
 
   /** PDF dirender di server dari HTML TERSIMPAN (hash diverifikasi dulu; dokumen Markdown -> 422). */
@@ -93,8 +93,8 @@ export class PublisherController {
     if (r.format !== 'html') throw new ProblemException(422, 'unprocessable', 'PDF hanya untuk dokumen HTML', 'Terbitkan dokumen berformat HTML untuk mendapatkan PDF.');
     if (createHash('sha256').update(r.content, 'utf8').digest('hex') !== r.sha256) throw new ProblemException(409, 'conflict', 'Integritas dokumen gagal', 'Hash isi tersimpan tidak cocok; PDF tidak dibuat.');
     const pdf = await renderPdf(r.content);
-    res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `attachment; filename="dokumen-arsitektur-v${r.versi}.pdf"`);
-    res.setHeader('X-Source-SHA256', r.sha256); res.setHeader('X-Content-Type-Options', 'nosniff'); res.send(pdf);
+    res.header('Content-Type', 'application/pdf'); res.header('Content-Disposition', `attachment; filename="dokumen-arsitektur-v${r.versi}.pdf"`);
+    res.header('X-Source-SHA256', r.sha256); res.header('X-Content-Type-Options', 'nosniff'); res.send(pdf);
   }
 
   /** Verifikasi integritas: hash isi tersimpan vs hash saat terbit. */

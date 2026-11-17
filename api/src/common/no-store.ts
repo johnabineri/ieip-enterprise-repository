@@ -10,7 +10,7 @@ import { Observable } from 'rxjs';
 export class NoStoreInterceptor implements NestInterceptor {
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const res = ctx.switchToHttp().getResponse();
-    if (!res.getHeader('Cache-Control')) res.setHeader('Cache-Control', 'no-store');
+    if (!res.getHeader('Cache-Control')) res.header('Cache-Control', 'no-store');
     return next.handle();
   }
 }

@@ -14,7 +14,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { prefixesFor } from '../src/gse/ai-scaffold';
-import { buildDatabase, db, DB_URL, HS_SECRET, seedWorld, tokenFor, World } from './helpers';
+import { buildDatabase, createApp, db, DB_URL, HS_SECRET, seedWorld, tokenFor, World } from './helpers';
 
 const LIVE = (process.env.LLM_LIVE_BASE_URL || '').replace(/\/+$/, '');
 const MODEL = process.env.LLM_LIVE_MODEL || 'qwen2.5:3b';
@@ -50,7 +50,7 @@ d(`LLM sungguhan (${MODEL} @ ${LIVE || '-'})`, () => {
       LLM_BASE_URL: `http://127.0.0.1:${(proxy.address() as any).port}/v1`, LLM_MODEL: MODEL, LLM_TIMEOUT_MS: process.env.LLM_LIVE_TIMEOUT_MS || '240000' });
     delete process.env.OIDC_JWKS_URI; delete process.env.OIDC_ISSUER; delete process.env.OIDC_AUDIENCE; delete process.env.OPA_URL; delete process.env.LLM_API_KEY;
     const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = mod.createNestApplication(); await app.init();
+    app = await createApp(mod);
     for (const n of Object.keys(w.users)) tok[n] = await tokenFor(n);
   });
   afterAll(async () => {

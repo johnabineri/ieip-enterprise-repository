@@ -13,11 +13,12 @@
     "test:llm-live": "jest --runInBand test/llm-live"
   },
   "dependencies": {
+    "@fastify/cors": "^11.4.3",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
-    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/platform-fastify": "^11.2.10",
     "@opentelemetry/exporter-trace-otlp-http": "^0.300.0",
-    "@opentelemetry/instrumentation-express": "^0.72.0",
+    "@opentelemetry/instrumentation-fastify": "^0.56.0",
     "@opentelemetry/instrumentation-http": "^0.300.0",
     "@opentelemetry/instrumentation-pg": "^0.77.0",
     "@opentelemetry/sdk-node": "^0.300.0",
@@ -32,7 +33,6 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
-    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
@@ -56,8 +56,5 @@
     },
     "testEnvironment": "node",
     "testTimeout": 30000
-  },
-  "overrides": {
-    "multer": "^2.5.0"
   }
 }

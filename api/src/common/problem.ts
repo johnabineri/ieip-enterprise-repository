@@ -31,7 +31,7 @@ export class ProblemFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const req = http.getRequest();
     const res = http.getResponse();
-    const instance = req.originalUrl?.split('?')[0];
+    const instance = req.url?.split('?')[0];
     let body: Record<string, unknown>;
 
     if (e instanceof HttpException) {
@@ -51,7 +51,7 @@ export class ProblemFilter implements ExceptionFilter {
       this.log.error(e instanceof Error ? e.stack : String(e));
       body = { type: BASE + 'internal', title: 'Kesalahan internal', status: 500, instance };
     }
-    res.setHeader('Cache-Control', 'no-store');
+    res.header('Cache-Control', 'no-store');
     res.status(body.status as number).type('application/problem+json').send(body);
   }
 }

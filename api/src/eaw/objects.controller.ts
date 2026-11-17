@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, pageLimit, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -115,7 +115,7 @@ export class ObjectsController {
     const spec = this.spec(path);
     const row = await this.db.tx(p, async (c) => (await c.query(`${select(spec)} WHERE x.id = $1 AND x.deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!row) throw new NotFoundException(`${spec.label} tidak ditemukan atau di luar cakupan akses`);
-    res.setHeader('ETag', etagOf(row.row_version));
+    res.header('ETag', etagOf(row.row_version));
     return dto(spec, row);
   }
 
@@ -125,7 +125,7 @@ export class ObjectsController {
     return this.db.tx(p, async (c) => {
       const ins = await c.query(`INSERT INTO ${spec.table} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, cols.map((k) => v[k]));
       const row = (await c.query(`${select(spec)} WHERE x.id = $1`, [ins.rows[0].id])).rows[0];
-      res.setHeader('ETag', etagOf(row.row_version));
+      res.header('ETag', etagOf(row.row_version));
       return dto(spec, row);
     });
   }
@@ -139,7 +139,7 @@ export class ObjectsController {
       assertVersion(ver, cur.row_version);
       await c.query(`UPDATE ${spec.table} SET ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...cols.map((k) => v[k])]);
       const row = (await c.query(`${select(spec)} WHERE x.id = $1`, [id])).rows[0];
-      res.setHeader('ETag', etagOf(row.row_version));
+      res.header('ETag', etagOf(row.row_version));
       return dto(spec, row);
     });
   }

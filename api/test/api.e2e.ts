@@ -7,7 +7,7 @@ import { findBrowser } from '../src/eaw/pdf';
 import { xsdHashes } from '../src/eaw/xsd';
 import { applyMap, evalRules, getPath, unsafeRegexReason } from '../src/console/eio';
 import { ProblemException } from '../src/common/problem';
-import { buildDatabase, db, DB_URL, HS_SECRET, refExec, seedWorld, tokenFor, World } from './helpers';
+import { buildDatabase, createApp, db, DB_URL, HS_SECRET, refExec, seedWorld, tokenFor, World } from './helpers';
 
 jest.setTimeout(180_000);
 
@@ -50,7 +50,7 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     Object.assign(process.env, { DATABASE_URL: DB_URL, JWT_HS_SECRET: HS_SECRET, NODE_ENV: 'test' });
     delete process.env.OIDC_JWKS_URI; delete process.env.OIDC_ISSUER; delete process.env.OIDC_AUDIENCE;
     const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = mod.createNestApplication(); await app.init();
+    app = await createApp(mod);
     for (const n of Object.keys(w.users)) tok[n] = await tokenFor(n);
   });
   afterAll(async () => { await app?.close(); });
@@ -1815,7 +1815,7 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
 
     // 3) layanan GSE berdiri sendiri: hanya rutenya + /health + /metrics
     const mod = await Test.createTestingModule({ imports: [appModuleFor('gse')] }).compile();
-    const svc = mod.createNestApplication(); await svc.init();
+    const svc = await createApp(mod);
     try {
       const r = () => request(svc.getHttpServer());
       await r().get('/health').expect(200); await r().get('/health/ready').expect(200);
@@ -1838,7 +1838,7 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     } finally { await svc.close(); }
     // 4) layanan set menjadi pemilik /me dan tidak melayani GSE
     const setMod = await Test.createTestingModule({ imports: [appModuleFor('set')] }).compile();
-    const setApp = setMod.createNestApplication(); await setApp.init();
+    const setApp = await createApp(setMod);
     try {
       await request(setApp.getHttpServer()).get('/api/v1/me').set(as('app')).expect(200);
       await request(setApp.getHttpServer()).get('/api/v1/gse/templates').set(as('dev')).expect(404);

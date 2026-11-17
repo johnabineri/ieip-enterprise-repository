@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, ForbiddenException, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { IsArray, IsIn, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, IsInt, Min, Max } from 'class-validator';
 import { randomUUID } from 'crypto';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, pageLimit, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -126,7 +126,7 @@ export class EioController {
       assertVersion(v, cur.row_version);
       const r = (await c.query('UPDATE console.eio_canonical SET nama = COALESCE($2, nama), deskripsi = COALESCE($3, deskripsi), fields = COALESCE($4::jsonb, fields) WHERE id = $1 RETURNING *',
         [id, b.nama?.trim() ?? null, b.deskripsi ?? null, b.fields ? JSON.stringify(b.fields) : null])).rows[0];
-      res.setHeader('ETag', etagOf(r.row_version)); return canonDto(r);
+      res.header('ETag', etagOf(r.row_version)); return canonDto(r);
     });
   }
 
@@ -158,7 +158,7 @@ export class EioController {
     this.canRead(p);
     const r = await this.db.tx(p, async (c) => (await c.query(`${ROUTE_SQL} WHERE r.id = $1 AND r.deleted_at IS NULL`, [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('rute tidak ditemukan');
-    res.setHeader('ETag', etagOf(r.row_version)); return routeDto(r);
+    res.header('ETag', etagOf(r.row_version)); return routeDto(r);
   }
 
   @Post('eio/routes') @HttpCode(201) @RequirePermission('console.eio.write')
@@ -185,7 +185,7 @@ export class EioController {
           path = COALESCE($6, path), request_map = COALESCE($7::jsonb, request_map), response_map = COALESCE($8::jsonb, response_map), rules = COALESCE($9::jsonb, rules) WHERE id = $1`,
         [id, b.nama?.trim() ?? null, b.deskripsi ?? null, b.canonicalId ?? null, b.method ?? null, b.path ?? null,
           b.requestMap ? JSON.stringify(b.requestMap) : null, b.responseMap ? JSON.stringify(b.responseMap) : null, b.rules ? JSON.stringify(b.rules) : null]);
-      const r = (await c.query(`${ROUTE_SQL} WHERE r.id = $1`, [id])).rows[0]; res.setHeader('ETag', etagOf(r.row_version)); return routeDto(r);
+      const r = (await c.query(`${ROUTE_SQL} WHERE r.id = $1`, [id])).rows[0]; res.header('ETag', etagOf(r.row_version)); return routeDto(r);
     });
   }
 
@@ -232,7 +232,7 @@ export class EioController {
     const t0 = Date.now();
     const exchangeId = randomUUID();
     const correlationId = corrHdr || randomUUID();
-    res.setHeader('X-EIO-Exchange', exchangeId); res.setHeader('X-Correlation-Id', correlationId);
+    res.header('X-EIO-Exchange', exchangeId); res.header('X-Correlation-Id', correlationId);
 
     const r = await this.db.tx(p, async (c) => (await c.query(`SELECT r.*, c.kode AS canonical_kode, c.versi AS canonical_versi, c.fields, c.status AS canonical_status,
         k.kode AS connector_kode, k.breaking_changes, f.nama AS saga_flow_nama, f.spec AS saga_spec

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ArrayMinSize, ArrayMaxSize } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { assertVersion, etagOf, pageLimit, requireIfMatch, uuidOr400 } from '../common/http';
 import { ProblemException } from '../common/problem';
@@ -101,7 +101,7 @@ export class GseController {
   async template(@CurrentUser() p: Principal, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query('SELECT * FROM gse.template WHERE id = $1 AND deleted_at IS NULL', [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('template tidak ditemukan');
-    res.setHeader('ETag', etagOf(r.row_version));
+    res.header('ETag', etagOf(r.row_version));
     return tplDto(r, true);
   }
   @Post('templates') @HttpCode(201) @RequirePermission('gse.project.run')
@@ -168,8 +168,8 @@ export class GseController {
       return { proj, files: (await c.query('SELECT path, content FROM gse.workspace_file WHERE project_id = $1 AND NOT deleted ORDER BY path', [id])).rows as TplFile[] };
     });
     if (!files.length) throw new ProblemException(409, 'invalid-state', 'Proyek tanpa berkas (diblokir)');
-    res.setHeader('Content-Type', 'application/x-tar');
-    res.setHeader('Content-Disposition', `attachment; filename="${String(proj.kode).toLowerCase()}-scaffold.tar"`);
+    res.header('Content-Type', 'application/x-tar');
+    res.header('Content-Disposition', `attachment; filename="${String(proj.kode).toLowerCase()}-scaffold.tar"`);
     res.send(tar(files));
   }
 
@@ -247,7 +247,7 @@ export class GseController {
   async flow(@CurrentUser() p: Principal, @Param('id') id: string, @Res({ passthrough: true }) res: Response) {
     const r = await this.db.tx(p, async (c) => (await c.query('SELECT * FROM gse.flow WHERE id = $1 AND deleted_at IS NULL', [uuidOr400(id)])).rows[0]);
     if (!r) throw new NotFoundException('flow tidak ditemukan');
-    res.setHeader('ETag', etagOf(r.row_version));
+    res.header('ETag', etagOf(r.row_version));
     return flowDto(r);
   }
   @Get('flows/:id/yaml') @RequirePermission('gse.project.read')
@@ -260,7 +260,7 @@ export class GseController {
   createFlow(@CurrentUser() p: Principal, @Body() b: FlowDto, @Res({ passthrough: true }) res: Response) {
     return this.db.tx(p, async (c) => {
       const r = (await c.query('INSERT INTO gse.flow (nama, kind, spec) VALUES ($1,$2,$3::jsonb) RETURNING *', [b.nama, b.kind, JSON.stringify(b.spec)])).rows[0];
-      res.setHeader('ETag', etagOf(r.row_version));
+      res.header('ETag', etagOf(r.row_version));
       return flowDto(r);
     });
   }
@@ -275,7 +275,7 @@ export class GseController {
       // perubahan atas flow committed mengembalikannya ke draft (harus di-commit ulang setelah validasi)
       const r = (await c.query(`UPDATE gse.flow SET nama = COALESCE($2, nama), spec = COALESCE($3::jsonb, spec), status = 'draft' WHERE id = $1 RETURNING *`,
         [id, b.nama ?? null, b.spec ? JSON.stringify(b.spec) : null])).rows[0];
-      res.setHeader('ETag', etagOf(r.row_version));
+      res.header('ETag', etagOf(r.row_version));
       return flowDto(r);
     });
   }

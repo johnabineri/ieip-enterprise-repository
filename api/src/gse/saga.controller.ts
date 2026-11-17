@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
 import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
-import type { Response } from 'express';
+import type { FastifyReply as Response } from 'fastify';
 import { CurrentUser, Principal, RequirePermission } from '../auth/auth';
 import { pageLimit, uuidOr400 } from '../common/http';
 import { DbService } from '../db/db.service';
@@ -29,7 +29,7 @@ export class GseSagaController {
   async start(@CurrentUser() p: Principal, @Param('id') id: string, @Body() b: RunDto, @Headers('idempotency-key') idemKey: string | undefined,
               @Res({ passthrough: true }) res: Response) {
     const r = await this.saga.start(p, uuidOr400(id), { input: b.input, mode: b.mode, failAt: b.failAt, failCompensation: b.failCompensation, runKey: idemKey });
-    if (r.replayed) { res.status(200); res.setHeader('Idempotent-Replayed', 'true'); }
+    if (r.replayed) { res.status(200); res.header('Idempotent-Replayed', 'true'); }
     return r.run;
   }
 
