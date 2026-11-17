@@ -2802,6 +2802,12 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     await http().post('/api/v1/eaw/applications').set(as('app')).send(appBody({ kode: 'COPPLAT-WS', nama: 'Zebra Quartz', platform: 'COPPLAT', workspace: 'zq', workspaceMode: 'INTERNAL_ROUTED' })).expect(201);
     const ws = (await ask('app', 'Apa yang terdampak jika COPPLAT-WS mati?').expect(200)).body;
     expect(ws.intent).toBe('impact'); expect(ws.answer).toContain('COPPLAT-WS · Zebra Quartz'); expect(ws.answer).not.toContain('kurang jelas');
+    // dampak PLATFORM ke workspace-nya (305: edge hosting) — dan sebaliknya workspace bergantung pada platformnya
+    const pl = (await ask('app', 'Apa yang terdampak jika platform COPPLAT mati?').expect(200)).body;
+    expect(pl.intent).toBe('impact'); expect(pl.answer).toContain('(platform, Draf)'); expect(pl.answer).toMatch(/workspace \(1\): COPPLAT-WS · Zebra Quartz/);
+    expect(pl.answer).not.toContain('tidak ada objek lain');
+    const wdep = (await ask('app', 'COPPLAT-WS bergantung pada apa?').expect(200)).body;
+    expect(wdep.intent).toBe('dependencies'); expect(wdep.answer).toContain('(workspace, Draf)'); expect(wdep.answer).toMatch(/platform \(1\): COPPLAT · Anggrek Merah/);
     const dep = (await ask('app', 'Portal Omega Prisma bergantung pada apa?').expect(200)).body;
     expect(dep.intent).toBe('dependencies'); expect(dep.answer).toContain('Klaster Zeta Kuantum');
     const sta = (await ask('app', 'Bagaimana status gate AF-06 Portal Omega Prisma?').expect(200)).body;

@@ -9,7 +9,7 @@ export interface Source { label: string; route: string }
 export interface Reply { intent: Intent; answer: string; facts: unknown; sources: Source[]; notes: string[] }
 export interface Target { type: string; id: string; label: string; status: string | null; score: number; hit: string }
 
-const JENIS: Record<string, string> = { process: 'proses', service: 'layanan', application: 'aplikasi', data_entity: 'entitas data', infra_asset: 'infrastruktur', control: 'kontrol' };
+const JENIS: Record<string, string> = { process: 'proses', service: 'layanan', application: 'aplikasi', data_entity: 'entitas data', infra_asset: 'infrastruktur', control: 'kontrol', workspace: 'workspace', platform: 'platform' };
 const ROUTE: Record<string, string> = { process: '/eaw/proses/', service: '/eaw/layanan/', application: '/eaw/aplikasi/', data_entity: '/eaw/data/', infra_asset: '/eaw/infra/', control: '/eaw/keamanan/' };
 const IMPACT_RE = /terdampak|dampak|downtime|\bmati\b|\bgagal\b|impact|terganggu|tumbang|\boff\b|offline/i;
 const DEPEND_RE = /dependensi|bergantung\s+(pada|ke)|membutuhkan|memerlukan|depends?\s+on|dependency/i;
@@ -70,20 +70,25 @@ async function safe<T>(c: any, name: string, fn: () => Promise<T>, fb: T): Promi
 
 async function toolImpact(c: any, t: Target, direction: 'impact' | 'dependencies'): Promise<Reply> {
   const r = await impactOf(c, t.type, t.id, direction, 10);
+  // keanggotaan workspace di platform = edge 'hosting' (305): sebutkan sebagai "workspace"/"platform", bukan "aplikasi"
+  const hostTo = new Set(r.edges.filter((e) => e.tipe === 'hosting').map((e) => e.to));
+  const hostFrom = new Set(r.edges.filter((e) => e.tipe === 'hosting').map((e) => e.from));
+  const role = (type: string, id: string) => (hostTo.has(`${type}:${id}`) ? 'workspace' : hostFrom.has(`${type}:${id}`) ? 'platform' : type);
+  const rootRole = t.type === 'application' && (hostFrom.has(`${t.type}:${t.id}`) || hostTo.has(`${t.type}:${t.id}`)) ? role(t.type, t.id) : t.type;
   const shown = r.nodes.filter((n) => n.depth > 0 && !n.hidden);
   const by = new Map<string, string[]>();
-  shown.forEach((n) => by.set(n.type, [...(by.get(n.type) ?? []), `${n.label}${n.status ? ` (${n.status})` : ''}`]));
+  shown.forEach((n) => { const k = role(n.type, n.id); by.set(k, [...(by.get(k) ?? []), `${n.label}${n.status ? ` (${n.status})` : ''}`]); });
   const head = direction === 'impact'
-    ? `Jika ${t.label} (${JENIS[t.type]}, ${t.status}) terganggu, terdampak ${r.summary.total} objek`
-    : `${t.label} (${JENIS[t.type]}, ${t.status}) bergantung pada ${r.summary.total} objek`;
+    ? `Jika ${t.label} (${JENIS[rootRole]}, ${t.status}) terganggu, terdampak ${r.summary.total} objek`
+    : `${t.label} (${JENIS[rootRole]}, ${t.status}) bergantung pada ${r.summary.total} objek`;
   const lines = [...by.entries()].map(([ty, xs]) => `${JENIS[ty]} (${xs.length}): ${list(xs).join(', ')}`);
   const tail = [r.summary.hidden ? `${r.summary.hidden} objek berada di luar cakupan akses Anda sehingga tidak dirinci.` : '', r.truncated ? 'Hasil dipotong pada batas 1000 objek.' : '',
     r.summary.total ? `${r.summary.baseline} di antaranya berstatus baseline (Ditetapkan/Dipublikasi/Direviu).` : ''].filter(Boolean);
   const answer = r.summary.total === 0
     ? `${head.replace(/terdampak 0 objek|bergantung pada 0 objek/, direction === 'impact' ? 'tidak ada objek lain yang bergantung padanya' : 'tidak bergantung pada objek lain')} menurut relasi yang tercatat di EAW.`
     : `${head}:\n${bullets(lines)}${tail.length ? '\n' + tail.join(' ') : ''}`;
-  return { intent: direction, answer, facts: { root: r.root, direction, summary: r.summary, perJenis: Object.fromEntries([...by.entries()].map(([k, v]) => [JENIS[k], v.length])), contoh: Object.fromEntries([...by.entries()].map(([k, v]) => [JENIS[k], v.slice(0, 8)])) },
-    sources: [{ label: 'Lineage & Impact', route: '/eaw/lineage/' }, { label: `Daftar ${JENIS[t.type]}`, route: ROUTE[t.type] }], notes: ['Berdasarkan relasi EAW yang tercatat — bukan pemindaian infrastruktur sungguhan.'] };
+  return { intent: direction, answer, facts: { root: { ...r.root, jenis: JENIS[rootRole] }, direction, summary: r.summary, perJenis: Object.fromEntries([...by.entries()].map(([k, v]) => [JENIS[k], v.length])), contoh: Object.fromEntries([...by.entries()].map(([k, v]) => [JENIS[k], v.slice(0, 8)])) },
+    sources: [{ label: 'Lineage & Impact', route: '/eaw/lineage/' }, { label: `Daftar ${JENIS[t.type]}`, route: ROUTE[t.type] }], notes: ['Berdasarkan relasi EAW yang tercatat (termasuk platform → workspace) — bukan pemindaian infrastruktur sungguhan.'] };
 }
 
 async function toolStatus(c: any, t: Target): Promise<Reply> {
