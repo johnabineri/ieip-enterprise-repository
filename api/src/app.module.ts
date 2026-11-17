@@ -13,6 +13,8 @@ import { LineageController } from './eaw/lineage.controller';
 import { PublisherController } from './eaw/publisher.controller';
 import { DiagramsController } from './eaw/diagrams.controller';
 import { DashboardController } from './eaw/dashboard.controller';
+import { EcosystemController } from './eaw/ecosystem.controller';
+import { RepositoryController } from './eaw/repository.controller';
 import { ObjectsController, ReadinessController } from './eaw/objects.controller';
 import { RelationsController } from './eaw/relations.controller';
 import { WorkflowController } from './eaw/workflow.controller';
@@ -45,7 +47,7 @@ import { IntegrationsController } from './set/integrations.controller';
 export const SERVICE_NAMES = ['eaw', 'gse', 'req', 'console', 'set', 'all'] as const;
 export type ServiceName = (typeof SERVICE_NAMES)[number];
 
-const EAW: Type[] = [EntityOrgController, ApplicationsController, WorkflowController, ObjectsController, ReadinessController, RelationsController, DashboardController, DiagramsController,
+const EAW: Type[] = [EntityOrgController, ApplicationsController, WorkflowController, ObjectsController, ReadinessController, RelationsController, DashboardController, EcosystemController, RepositoryController, DiagramsController,
   PublisherController, LineageController, ImportController, RoadmapController, ReferencesController, AdrsController, ArbController];
 const GSE: Type[] = [GseController, GseGitController, GseWorkspaceController, GseSagaController];
 const REQ: Type[] = [ReqController];

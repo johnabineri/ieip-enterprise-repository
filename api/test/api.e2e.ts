@@ -2706,4 +2706,39 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     await http().patch(C(`/eio/routes/${rt.id}`)).set(as('app')).set('If-Match', etag).send({ rules: [{ field: 'kode', op: 'regex', value: 'x(?=y)' }] }).expect(422);
     await http().patch(C(`/eio/routes/${rt.id}`)).set(as('app')).set('If-Match', etag).send({ rules: many.map((r) => ({ ...r, field: 'kode' })) }).expect(422);
   });
+  it('Redundancy & Drift Monitor + KPI Ekosistem: dari data nyata, RLS, KPI tanpa sumber = null', async () => {
+    await http().post('/api/v1/eaw/applications').set(as('app')).send(appBody({ kode: 'ECO-DUP-A', nama: 'Portal Vendor Mitra Ekosistem' })).expect(201);
+    await http().post('/api/v1/eaw/applications').set(as('app')).send(appBody({ kode: 'ECO-DUP-B', nama: 'Portal Vendor Mitra Ekosistem B' })).expect(201);
+    const e = (await http().get('/api/v1/eaw/ecosystem').set(as('app')).expect(200)).body;
+    expect(e.threshold).toBe(75);
+    const dup = e.redundancy.find((x: any) => x.kind === 'Duplikasi' && /ECO-DUP-[AB] ≈ ECO-DUP-[AB]/.test(x.title));
+    expect(dup).toBeTruthy();
+    expect(dup.detail).toMatch(/Portal Vendor Mitra Ekosistem.*\d+% mirip/);
+    expect(e.notCovered.length).toBeGreaterThanOrEqual(3);                                              // batas jujur dilaporkan, bukan disembunyikan
+    expect(e.kpis.map((k: any) => k.id)).toEqual(['K-01', 'K-02', 'K-03', 'K-04', 'K-05', 'K-07', 'K-08', 'K-10']);
+    const k = (id: string) => e.kpis.find((x: any) => x.id === id);
+    expect(k('K-01').value).toMatch(/^\d+ \/ \d+$/);                                                    // dihitung dari katalog
+    for (const id of ['K-03', 'K-04', 'K-05', 'K-10']) { expect(k(id).value).toBeNull(); expect(k(id).pct).toBeNull(); expect(k(id).reason).toBeTruthy(); }
+    // RLS: Draf entitas Aspal tidak terlihat SBU Toyota → pasangan itu tidak muncul
+    const t = (await http().get('/api/v1/eaw/ecosystem').set(as('sbu_t')).expect(200)).body;
+    expect(t.redundancy.some((x: any) => /ECO-DUP/.test(x.title))).toBe(false);
+    await http().get('/api/v1/eaw/ecosystem').set(as('emp')).expect(403);                              // tanpa eaw.catalog.read
+  });
+  it('Repository per platform: Platform → Workspace → 6 Domain, mengikuti RLS', async () => {
+    const ws = (await http().post('/api/v1/eaw/applications').set(as('app')).send(appBody({ kode: 'REPO-WS', nama: 'Workspace Repo', platform: 'PLAT-A', workspace: 'repows', workspaceMode: 'INTERNAL_ROUTED' })).expect(201)).body;
+    await completeRelations(ws.id);
+    const r = (await http().get('/api/v1/eaw/repository').set(as('app')).expect(200)).body;
+    expect(r.domains).toEqual(['process', 'data_entity', 'service', 'application', 'infra_asset', 'control']);
+    const plat = r.platforms.find((x: any) => x.kode === 'PLAT-A');
+    expect(plat).toBeTruthy();
+    const w = plat.workspaces.find((x: any) => x.kode === 'REPO-WS');
+    expect(w).toBeTruthy();
+    for (const t of ['process', 'data_entity', 'service', 'infra_asset', 'control']) expect(w.objects[t]).toHaveLength(1);   // objek berelasi langsung
+    expect(w.objects.application).toEqual([expect.objectContaining({ id: ws.id, tipe: 'workspace' })]);                      // workspace itu sendiri di D4
+    expect(w.objects.process[0]).toMatchObject({ label: 'Proses', tipe: 'serving' });
+    // RLS: Draf entitas Aspal tidak terlihat SBU Toyota → workspace itu tidak muncul di repository-nya
+    const t = (await http().get('/api/v1/eaw/repository').set(as('sbu_t')).expect(200)).body;
+    expect([...t.platforms.flatMap((x: any) => x.workspaces), ...t.unplaced].some((x: any) => x.kode === 'REPO-WS')).toBe(false);
+    await http().get('/api/v1/eaw/repository').set(as('emp')).expect(403);
+  });
 });
