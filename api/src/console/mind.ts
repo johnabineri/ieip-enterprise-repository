@@ -7,7 +7,7 @@ import { impactOf, TABLE, TYPES } from '../eaw/impact';
 export type Intent = 'impact' | 'dependencies' | 'status' | 'redundancy' | 'drift' | 'kpi' | 'ika' | 'summary' | 'help';
 export interface Source { label: string; route: string }
 export interface Reply { intent: Intent; answer: string; facts: unknown; sources: Source[]; notes: string[] }
-export interface Target { type: string; id: string; label: string; status: string | null; score: number }
+export interface Target { type: string; id: string; label: string; status: string | null; score: number; hit: string }
 
 const JENIS: Record<string, string> = { process: 'proses', service: 'layanan', application: 'aplikasi', data_entity: 'entitas data', infra_asset: 'infrastruktur', control: 'kontrol' };
 const ROUTE: Record<string, string> = { process: '/eaw/proses/', service: '/eaw/layanan/', application: '/eaw/aplikasi/', data_entity: '/eaw/data/', infra_asset: '/eaw/infra/', control: '/eaw/keamanan/' };
@@ -40,17 +40,24 @@ export function detectIntent(q: string, hasTarget = false): Intent {
   return 'help';
 }
 
-/** Objek EAW yang disebut dalam pertanyaan: kemiripan trigram (kata) nama/kode terhadap teks, hanya yang terlihat pemanggil (RLS). */
+/** Objek EAW yang disebut dalam pertanyaan: kemiripan trigram (kata) nama/kode terhadap teks, hanya yang terlihat pemanggil (RLS).
+ *  `hit` = pengenal (kode/nama) TERPANJANG yang muncul HARFIAH di teks. Urutan: skor → hit terpanjang → label terpanjang, sehingga "BASE-AEGIS" mengalahkan
+ *  platform "BASE" (kode "BASE" juga cocok sebagai kata pada teks "BASE-AEGIS" dan sama-sama skor 1). */
 export async function findTargets(c: any, text: string): Promise<Target[]> {
-  const q = `SELECT type, id, label, status, sc FROM (
-      SELECT 'application'::text AS type, x.id, x.kode || ' · ' || x.nama AS label, x.status::text, GREATEST(word_similarity(x.nama, $1), word_similarity(x.kode, $1)) AS sc FROM eaw.application x WHERE x.deleted_at IS NULL
-      UNION ALL SELECT 'process', x.id, x.nama, x.status::text, word_similarity(x.nama, $1) FROM eaw.process x WHERE x.deleted_at IS NULL
-      UNION ALL SELECT 'service', x.id, x.nama, x.status::text, word_similarity(x.nama, $1) FROM eaw.service x WHERE x.deleted_at IS NULL
-      UNION ALL SELECT 'data_entity', x.id, x.nama_kanonikal, x.status::text, word_similarity(x.nama_kanonikal, $1) FROM eaw.data_entity x WHERE x.deleted_at IS NULL
-      UNION ALL SELECT 'infra_asset', x.id, x.nama, x.status::text, GREATEST(word_similarity(x.nama, $1), word_similarity(COALESCE(x.lokasi, ''), $1)) FROM eaw.infra_asset x WHERE x.deleted_at IS NULL
-      UNION ALL SELECT 'control', x.id, x.aspek || COALESCE(' · ' || x.standar_rujukan, ''), x.status::text, word_similarity(x.aspek, $1) FROM eaw.control x WHERE x.deleted_at IS NULL
-    ) m WHERE sc >= 0.6 AND length(label) >= 5 ORDER BY sc DESC, length(label) DESC LIMIT 6`;
-  return (await c.query(q, [text])).rows.map((r: any) => ({ type: r.type, id: r.id, label: r.label, status: r.status, score: Number(r.sc) }));
+  const q = `SELECT type, id, label, status, sc, names FROM (
+      SELECT 'application'::text AS type, x.id, x.kode || ' · ' || x.nama AS label, x.status::text, GREATEST(word_similarity(x.nama, $1), word_similarity(x.kode, $1)) AS sc, ARRAY[x.kode::text, x.nama::text] AS names FROM eaw.application x WHERE x.deleted_at IS NULL
+      UNION ALL SELECT 'process', x.id, x.nama, x.status::text, word_similarity(x.nama, $1), ARRAY[x.nama::text] FROM eaw.process x WHERE x.deleted_at IS NULL
+      UNION ALL SELECT 'service', x.id, x.nama, x.status::text, word_similarity(x.nama, $1), ARRAY[x.nama::text] FROM eaw.service x WHERE x.deleted_at IS NULL
+      UNION ALL SELECT 'data_entity', x.id, x.nama_kanonikal, x.status::text, word_similarity(x.nama_kanonikal, $1), ARRAY[x.nama_kanonikal::text] FROM eaw.data_entity x WHERE x.deleted_at IS NULL
+      UNION ALL SELECT 'infra_asset', x.id, x.nama, x.status::text, GREATEST(word_similarity(x.nama, $1), word_similarity(COALESCE(x.lokasi, ''), $1)), ARRAY[x.nama::text] FROM eaw.infra_asset x WHERE x.deleted_at IS NULL
+      UNION ALL SELECT 'control', x.id, x.aspek || COALESCE(' · ' || x.standar_rujukan, ''), x.status::text, word_similarity(x.aspek, $1), ARRAY[x.aspek::text] FROM eaw.control x WHERE x.deleted_at IS NULL
+    ) m WHERE sc >= 0.6 AND length(label) >= 5 ORDER BY sc DESC, length(label) DESC LIMIT 30`;
+  const low = text.toLowerCase();
+  const rows: Target[] = (await c.query(q, [text])).rows.map((r: any) => ({
+    type: r.type, id: r.id, label: r.label, status: r.status, score: Number(r.sc),
+    hit: ((r.names as string[]).filter((n) => n && n.length >= 3 && low.includes(n.toLowerCase())).sort((a, b) => b.length - a.length)[0]) ?? '',
+  }));
+  return rows.sort((a, b) => b.score - a.score || b.hit.length - a.hit.length || b.label.length - a.label.length).slice(0, 6);
 }
 
 const list = (xs: string[], max = 8) => (xs.length > max ? [...xs.slice(0, max), `… dan ${xs.length - max} lainnya`] : xs);
@@ -159,8 +166,10 @@ export async function answerQuestion(c: any, text: string): Promise<Reply> {
     return helpReply(`Untuk ${intent === 'impact' ? 'analisis dampak' : 'dependensi'} saya perlu tahu objeknya. Sebut nama aplikasi, proses, layanan, entitas data, infrastruktur, atau kontrol sesuai penamaan di EAW.`);
   }
   const top = targets[0];
-  // ambigu hanya bila ada kandidat lain yang sama kuat DAN namanya bukan bagian dari nama pilihan teratas (mis. "Klaster" di dalam "Klaster Zeta Kuantum")
-  const close = targets.filter((x) => x.id !== top.id && x.score >= top.score - 0.05 && !top.label.toLowerCase().includes(x.label.toLowerCase()));
+  // ambigu hanya bila ada kandidat lain yang sama kuat DAN namanya bukan bagian dari nama pilihan teratas (mis. "Klaster" di dalam "Klaster Zeta Kuantum"),
+  // DAN pengenal harfiahnya bukan bagian dari pengenal pilihan teratas (mis. kode "BASE" di dalam "BASE-AEGIS")
+  const inside = (x: Target) => !!top.hit && !!x.hit && top.hit.length > x.hit.length && top.hit.toLowerCase().includes(x.hit.toLowerCase());
+  const close = targets.filter((x) => x.id !== top.id && x.score >= top.score - 0.05 && !top.label.toLowerCase().includes(x.label.toLowerCase()) && !inside(x));
   if (close.length) return helpReply(`Objek yang Anda maksud kurang jelas. Mana di antara ini?\n${bullets([top, ...close].slice(0, 5).map((x) => `${x.label} (${JENIS[x.type]})`))}`);
   return intent === 'status' ? toolStatus(c, top) : toolImpact(c, top, intent === 'dependencies' ? 'dependencies' : 'impact');
 }

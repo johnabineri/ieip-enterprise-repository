@@ -2797,6 +2797,11 @@ describe('EAP API (e2e terhadap kalla_eap uji)', () => {
     expect(imp).toMatchObject({ blocked: false, intent: 'impact', mode: 'deterministik', model: null });
     expect(imp.answer).toContain('COP-1 · Portal Omega Prisma'); expect(imp.answer).toContain('terdampak 1 objek');
     expect(imp.sources.map((x: any) => x.route)).toContain('/eaw/lineage/'); expect(['opa', 'pattern']).toContain(imp.guard.engine);
+    // regresi: kode platform ("COPPLAT") ikut cocok sebagai kata pada teks "COPPLAT-WS" dengan skor sama; pengenal terpanjang harus menang, bukan minta klarifikasi
+    await http().post('/api/v1/eaw/applications').set(as('app')).send(appBody({ kode: 'COPPLAT', nama: 'Anggrek Merah Platform Panjang Sekali Uji' })).expect(201);
+    await http().post('/api/v1/eaw/applications').set(as('app')).send(appBody({ kode: 'COPPLAT-WS', nama: 'Zebra Quartz', platform: 'COPPLAT', workspace: 'zq', workspaceMode: 'INTERNAL_ROUTED' })).expect(201);
+    const ws = (await ask('app', 'Apa yang terdampak jika COPPLAT-WS mati?').expect(200)).body;
+    expect(ws.intent).toBe('impact'); expect(ws.answer).toContain('COPPLAT-WS · Zebra Quartz'); expect(ws.answer).not.toContain('kurang jelas');
     const dep = (await ask('app', 'Portal Omega Prisma bergantung pada apa?').expect(200)).body;
     expect(dep.intent).toBe('dependencies'); expect(dep.answer).toContain('Klaster Zeta Kuantum');
     const sta = (await ask('app', 'Bagaimana status gate AF-06 Portal Omega Prisma?').expect(200)).body;
