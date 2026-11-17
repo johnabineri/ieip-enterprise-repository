@@ -5,6 +5,9 @@
   .skel { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-2) 50%, var(--surface-3) 75%); background-size: 200% 100%; animation: eap-shimmer 1.3s linear infinite; }
   @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
 
+  /* ---------- lencana lonceng notifikasi (jumlah belum dibaca) ---------- */
+  .bell-badge { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--err); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none; }
+
   /* ---------- layar masuk (mockup tidak punya; memakai token & komponen mockup) ---------- */
   .login { min-height: var(--eap-height, 100vh); display: grid; place-items: center; padding: 16px; background: var(--brand); }
   .login .card { width: min(400px, 100%); padding: 24px; }
