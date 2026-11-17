@@ -23,6 +23,8 @@ export interface GridSpec {
   title: string;
   description?: React.ReactNode;
   notice?: React.ReactNode;
+  /** true = tanpa PageHd sendiri (dipakai sebagai isi tab di halaman yang memiliki judul sendiri). */
+  bare?: boolean;
   path?: string;
   query?: api.Query;
   /** Respons berupa array/semua baris sekaligus (tanpa kursor). */
@@ -128,7 +130,7 @@ export function GridPage(spec: GridSpec) {
 
   return (
     <>
-      <PageHd title={spec.title} sub={spec.description} acts={acts} />
+      {spec.bare ? null : <PageHd title={spec.title} sub={spec.description} acts={acts} />}
       {spec.notice ? <div className="mb"><Callout tone="info">{spec.notice}</Callout></div> : null}
       <section className="card">
         <div className="toolbar">

@@ -12,7 +12,8 @@ import { toast } from '@/store/ui';
 import { GridPage } from '@/components/grid/grid-page';
 import { col } from '@/components/grid/cols';
 import { Drawer, confirmDialog, formDialog, openDrawer } from '@/components/overlay';
-import { Badge, Btn, Callout, Card, DL, Field, Kpi, MiniTable, PageHd, Section, Select, Tag } from '@/components/ui';
+import { Badge, Btn, Callout, Card, DL, Field, Kpi, MiniTable, PageHd, Section, Select, Tabs, Tag } from '@/components/ui';
+import { MatrixTab, RaciTab, useRoleCatalog } from './set-roles';
 import { t } from '@/lib/i18n';
 
 const activeCol = col.badge('isActive', t('Status'), { label: (r) => (r.isActive ? 'active' : 'inactive') });
@@ -135,8 +136,8 @@ function Users() {
 }
 
 /* ---------------------------------------------------------------- 5.3 peran ---------------------------------------------------------------- */
-function Roles() {
-  return <GridPage title={t('Roles & Permissions')} description={t('Katalog peran resmi beserta izin (kode <workspace>.<modul>.<aksi>).')}
+function RolesList() {
+  return <GridPage bare title={t('Roles & Permissions')} description={t('Katalog peran resmi beserta izin (kode <workspace>.<modul>.<aksi>).')}
     path="/api/v1/set/roles" all exportName="peran"
     columns={[col.mono('roleCode', t('Kode')), col.strong('roleName', t('Nama')), col.num('tier', 'Tier', 0, { maxWidth: 90 }), col.tag('editScope', t('Cakupan ubah')),
       col.bool('canViewAll', t('Lihat semua')), col.calc(t('Izin'), (r) => (r.permissions || []).length, { maxWidth: 100, type: 'rightAligned', cellClass: 'num' })]}
@@ -147,6 +148,19 @@ function Roles() {
         <div className="chips">{(row.permissions || []).map((p: string) => <Tag key={p}>{p}</Tag>)}</div>
       </Section>
     )} />;
+}
+
+/** Roles & Permissions: tab Matriks Izin (peran × izin dalam satu layar), RACI turunan, dan daftar peran (grid + detail). Hanya baca — dikelola lewat seed. */
+function Roles() {
+  const [tab, setTab] = React.useState<'matrix' | 'raci' | 'list'>('matrix');
+  const n = useRoleCatalog().roles.data?.filter((r) => r.isActive).length;
+  return (
+    <>
+      <PageHd title={t('Roles & Permissions')} sub={t('Peran resmi dengan izin granular <workspace>.<modul>.<aksi> (SET-03), dibaca langsung dari skema set. Hanya baca di sini: katalog dikelola lewat seed (scripts/gen_seed_set.py).')} />
+      <Tabs items={[['matrix', t('Matriks Izin')], ['raci', t('RACI (turunan)')], ['list', `${n ?? '…'} ${t('Peran')}`]]} value={tab} onChange={setTab} />
+      {tab === 'matrix' ? <MatrixTab /> : tab === 'raci' ? <RaciTab /> : <RolesList />}
+    </>
+  );
 }
 
 /* ---------------------------------------------------------------- 5.4 API client & secrets ---------------------------------------------------------------- */

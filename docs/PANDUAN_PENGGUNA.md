@@ -60,17 +60,44 @@ Navigasi layar:
 
 Wewenang ditegakkan di **database**, bukan hanya di layar. Kalau tombol terlihat tetapi Anda tidak berhak, sistem tetap menolak dengan pesan 403.
 
+### 3.1 Aksi penting dan pemegang izinnya
+
 | Aksi | Siapa yang boleh |
 |---|---|
 | Membuat platform | Enterprise Application Architect (`eaw.platform.write`) |
 | Menempatkan workspace ke platform, menandai *adopsi* | Enterprise Application Architect (`eaw.workspace.assign`) |
+| Menyusun/mengubah KRA di **KRA Manager** | Ketua ARB dan arsitek domain tingkat holding (`eaw.reference.write`); peran lain hanya membaca (`eaw.reference.read`) |
 | Draf → **Divalidasi** | Arsitek domain dan Ketua ARB (`eaw.validation.approve`) |
-| Divalidasi → **Ditetapkan** | Hanya Ketua ARB (`eaw.baseline.approve`). **Bukan penyusun objek itu** (empat mata). |
+| Divalidasi → **Ditetapkan** (termasuk KRA, kerangka kerja, dan status ADR *Accepted*) | Hanya Ketua ARB (`eaw.baseline.approve`). **Bukan penyusun objek itu** (empat mata). |
 | Ditetapkan → **Dipublikasi** | Arsitek domain dan Ketua ARB (`eaw.publication.approve`) |
-| Mengubah KRA | Peran tingkat holding |
-| Mengajukan tiket ARB | Arsitek (termasuk SBU Architect) |
-| Memutus tiket ARB | Ketua ARB, dan bukan pengaju tiket itu |
-| Menerima ADR (Accepted) | Ketua ARB |
+| Reviu berkala (Direviu → Draf/Divalidasi) | Arsitek domain dan Ketua ARB (`eaw.review.run`) |
+| Mengajukan tiket ARB | Arsitek, termasuk SBU Architect (`gov.arb.write`) |
+| Memutus tiket ARB | Ketua ARB, dan bukan pengaju tiket itu (`gov.arb.approve`) |
+| Menyusun ADR | Arsitek domain dan SBU Architect (`eaw.adr.write`) |
+| Menerbitkan dokumen resmi dan menyusun roadmap | Ketua ARB dan Enterprise Application Architect (`eaw.document.approve`, `eaw.roadmap.write`) |
+| Mengubah atribut arsitektur entitas | Ketua ARB (`eaw.org.write`) |
+| Menjalankan scaffolding GSE | Lead Software Engineer (`gse.project.run`); peran lain hanya melihat (`gse.project.read`) |
+| Menjalankan sesi elisitasi REQ | Arsitek, SBU Architect, BPO, dan Lead Software Engineer (`req.session.write`) |
+| Snapshot IKA | Ketua ARB dan System Administrator (`console.dashboard.write`) |
+| Register AI dan kill-switch | Security Architect dan System Administrator (`console.ai.admin`, `console.security.admin`) |
+| Mengelola konektor EIO | Infrastructure Architect, Application Architect, System Administrator (`console.eio.write`) |
+| Menugaskan peran dan mengelola akun | System Administrator (`set.account.admin`) |
+
+### 3.2 Melihat peran dan izin dalam satu layar
+
+Buka **SET › Roles & Permissions**. Halaman ini hanya baca, karena katalog peran dan izin dikelola lewat seed (`eap/scripts/gen_seed_set.py`). Ada tiga tab:
+
+| Tab | Isi |
+|---|---|
+| **Matriks Izin** | Semua peran aktif (baris) × seluruh katalog izin (kolom, dikelompokkan per workspace: CONSOLE, EAW, GOV, GSE, REQ, SET). Titik hijau berarti peran memegang izin itu. Baris peran Anda disorot. Kolom kanan menunjukkan jumlah izin per peran, dan baris bawah menunjukkan jumlah peran pemegang tiap izin. Arahkan kursor ke judul kolom untuk melihat kode dan deskripsi izin. |
+| **RACI (turunan)** | Fitur (baris, mengikuti menu seperti KRA Manager, Framework Builder, Kanvas ArchiMate, Lineage, ARB, ADR, API Client) × peran (kolom). Nilainya **dihitung dari izin nyata**: **A** = memegang izin gerbang persetujuan fitur, **R** = izin tulis/jalankan/admin (**R\*** bila peran berlingkup entitas), **I** = hanya baca, **-** = tanpa akses. Tabel berubah otomatis saat izin peran berubah. |
+| **N Peran** | Daftar peran sebagai tabel, dengan laci detail per peran. |
+
+Catatan:
+- **C (Consulted)** pada RACI PRD §13.2 adalah peran proses, bukan izin sistem. Karena itu C tidak dapat diturunkan dan tidak ditampilkan.
+- Fitur tanpa izin persetujuan (misalnya ADR dan Roadmap) tidak punya kolom **A**.
+- Izin baru di katalog otomatis muncul sebagai kolom di Matriks Izin. Agar ikut tampil di RACI, tambahkan fitur itu ke daftar `RACI_FEATURES` di `eap/web/src/modules/set-roles.tsx`.
+
 
 ## 4. Konsep yang perlu dipahami
 
@@ -309,7 +336,7 @@ Dengan ini lingkarannya tertutup. CMP (sumber data induk) menyediakan organisasi
 | **GSE › Agent & Saga Flow Builder** | Susun flow saga: setiap langkah yang mengubah data wajib punya kompensasi dan idempotency key. Uji dengan **simulate** sebelum live. |
 | **REQ › Sesi Elisitasi** | Ceritakan kebutuhan. Teks Anda disamarkan PII-nya lebih dulu, lalu diperiksa guardrail, baru dijawab asisten. Hasilnya user story + Gherkin (minimal 2 skenario). |
 | **CONSOLE › EIO Control Center** | Daftarkan model kanonikal dan rute integrasi. Aturan bisnis rute mendukung `regex` dengan mesin **RE2 (waktu linear)**: tanpa backreference/lookaround, pengulangan maksimal `{100}`, input maksimal 1.024 karakter, maksimal 10 aturan regex per rute. Coba dengan **simulate** sebelum mengaktifkan rute. |
-| **SET** | Admin menugaskan peran di **Akun Pengguna**. **Roles & Permissions** menampilkan matriks izin dan RACI turunannya. **Audit Trail** menampilkan jejak perubahan. |
+| **SET** | Admin menugaskan peran di **Akun Pengguna**. **Roles & Permissions** menampilkan Matriks Izin dan RACI turunannya (lihat [§3.2](#32-melihat-peran-dan-izin-dalam-satu-layar)). **Audit Trail** menampilkan jejak perubahan. |
 
 ## 8. Pesan galat yang sering muncul
 

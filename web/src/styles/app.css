@@ -5,6 +5,15 @@
   .skel { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-2) 50%, var(--surface-3) 75%); background-size: 200% 100%; animation: eap-shimmer 1.3s linear infinite; }
   @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
 
+  /* ---------- SET › Roles & Permissions: matriks padat (peran × izin dalam satu layar) ---------- */
+  .matrix-compact th.c, .matrix-compact td.c { padding: 5px 2px; min-width: 24px; }
+  .matrix-compact th.grp { text-align: center; font-size: 10.5px; letter-spacing: .08em; border-left: 1px solid var(--border); }
+  .matrix-compact td.c.tiny { font-weight: 600; color: var(--muted); }
+  .matrix-sum td { border-top: 2px solid var(--border-strong); background: var(--surface-2); }
+  .role-col { min-width: 210px; max-width: 260px; position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  thead .role-col { z-index: 2; background: var(--surface-2); }
+  th.mine { color: var(--accent-text); background: var(--accent-soft); }
+
   /* ---------- lencana lonceng notifikasi (jumlah belum dibaca) ---------- */
   .bell-badge { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--err); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none; }
 
