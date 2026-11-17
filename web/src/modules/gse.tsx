@@ -1,6 +1,6 @@
 'use client';
 /* GSE — Generative Software Engineering: Proyek Scaffolding (wizard Scaffold Baru, gerbang AF-06, push/PR, bundel), Template & Blueprint (buat/ubah/hapus),
-   Flow Builder + eksekusi saga (gse-flow.tsx). Web IDE (editor + commit) dan status PR terpisah masih di eap/ui (butuh Monaco + gabung 3-arah).
+   Flow Builder + eksekusi saga (gse-flow.tsx). Web IDE (editor + commit) dan status PR kini di gse-ide.tsx dan gse-pr.tsx (eap/ui sudah diarsipkan).
    Aturan SEBENARNYA di server/DB; peran penulis = gse.project.run (ROLE_EAP_GSE_DEVELOPER). */
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';

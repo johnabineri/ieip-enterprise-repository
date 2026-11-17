@@ -54,10 +54,6 @@ jobs:
       - name: Checkout EAP
         uses: actions/checkout@v4
 
-      # XSS: data tidak boleh disisipkan ke string JS di atribut handler (gunakan window.jsArg) — tanpa dependensi.
-      - name: Pemeriksa XSS handler inline UI
-        run: python3 scripts/check_ui_handlers.py
-
       - name: Uji DB EAP (DDL + seed 2× + migrasi + tests/*.test.sql + pii_guard)
         run: bash tests/run_all.sh
 

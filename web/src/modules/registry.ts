@@ -1,4 +1,4 @@
-/* Daftar workspace → menu (tab workspace di header + panel menu kiri + rute /<workspace>/<menu>/). Sumber: registri `WS` di eap/ui/assets/app.js
+/* Daftar workspace → menu (tab workspace di header + panel menu kiri + rute /<workspace>/<menu>/). Asal: registri `WS` mockup (arsip docs/archive/eap-ui-mockup/assets/app.js); kini berkas ini adalah sumbernya
    (diturunkan di struktur_module.md: 5 workspace, 34 layar) — kode, mode, port, nomor layar dan teks sama dengan mockup.
    Visibilitas menurut izin GET /me (UI saja — API/DB tetap memutuskan). Menu yang belum dimigrasi tetap tampil dan membuka halaman pengganti
    (./pages.tsx). generateStaticParams memakai berkas ini, jadi jangan impor komponen halaman di sini. */

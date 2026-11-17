@@ -1,7 +1,7 @@
 'use client';
 /* EAW — Enterprise Architecture Workbench, tampilan = mockup (pages-eaw.js): .page-hd + kartu .card/.kpi/.onb/.hbar/.tbl. Tahap ini: dashboard + daftar
    baca-saja (drawer Detail) untuk 6 domain, aplikasi, KRA, ARB, ADR dan dokumen terbit. Penyusunan/transisi status (eaw.transition), relasi, kanvas,
-   lineage dan roadmap masih di eap/ui. Data mengikuti RLS pemanggil (angka = yang boleh dilihat pengguna); bagian mockup tanpa data nyata
+   lineage dan roadmap kini ada di modul eaw-*.tsx (eap/ui sudah diarsipkan). Data mengikuti RLS pemanggil (angka = yang boleh dilihat pengguna); bagian mockup tanpa data nyata
    (topologi, redundansi/drift, KPI) = eaw-topology.tsx & eaw-monitor.tsx dari data nyata; tidak dibuat sebagai data contoh. */
 import * as React from 'react';
 import Link from 'next/link';

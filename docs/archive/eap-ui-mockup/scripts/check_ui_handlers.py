@@ -9,7 +9,7 @@ Dua pemindaian:
 """
 import glob, os, re, sys
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ui')
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')   # raiz arsip (assets/ + index.html)
 ATTR = re.compile(r'\bon(?:click|change|input|submit|keyup|keydown|focus|blur)\s*=\s*"')
 CALL = re.compile(r'\bApp\.[A-Za-z_]\w*\(')
 

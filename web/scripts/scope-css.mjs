@@ -1,4 +1,4 @@
-// Menurunkan src/styles/eap.css dari mockup eap/ui/assets/styles.css: semua aturan dibungkus `.eap-root { … }` (CSS nesting)
+// Menurunkan src/styles/eap.css dari mockup web/design/styles.css (diarsipkan dari eap/ui, tag eap-ui-mockup-final): semua aturan dibungkus `.eap-root { … }` (CSS nesting)
 // agar gaya EAP tidak bocor ke Host. Pemakaian: node scope-css.mjs <mockup styles.css> <keluaran eap.css>
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -31,7 +31,7 @@ rules = rules.replace(/@supports not selector\(::-webkit-scrollbar\)\{[^\n]*\n/,
 
 const indent = (s) => s.split('\n').map((l) => (l ? '  ' + l : l)).join('\n');
 const body = `/* =====================================================================
-   DITURUNKAN OTOMATIS dari eap/ui/assets/styles.css (mockup EAP) — jangan sunting bagian ini dengan tangan;
+   DITURUNKAN OTOMATIS dari web/design/styles.css (mockup EAP; asal eap/ui/assets/styles.css) — jangan sunting bagian ini dengan tangan;
    ubah mockup lalu jalankan ulang scripts/scope-css.mjs. Semua aturan di bawah .eap-root (tidak bocor ke Host).
    Tambahan khusus aplikasi React ada di app.css.
    ===================================================================== */

@@ -1,5 +1,5 @@
 'use client';
-/* Kerangka aplikasi = mockup eap/ui (index.html + renderHeader/renderNav di app.js), markup & kelas SAMA:
+/* Kerangka aplikasi = mockup (arsip docs/archive/eap-ui-mockup: index.html + renderHeader/renderNav di app.js), markup & kelas SAMA:
    .shell > header.hdr (menu-toggle, brand, ws-tabs, pencarian, entity-sel, avatar) + aside.nav (nav-ws, nav-group, a>num+lbl, nav-foot) + main.main > .page > .crumb.
    Lonceng notifikasi (notifications.tsx → set.notification) dan MIND Copilot (copilot.tsx → /console/mind) memakai data/backend NYATA, bukan data contoh. */
 import * as React from 'react';

@@ -2,14 +2,14 @@
   "name": "eap-web",
   "version": "0.1.0",
   "private": true,
-  "description": "SAORAJA EAP — SPA (Next.js App Router, ekspor statis); tampilan = mockup eap/ui (CSS diturunkan & dilingkup .eap-root)",
+  "description": "SAORAJA EAP — SPA (Next.js App Router, ekspor statis); tampilan = mockup (web/design/styles.css; CSS diturunkan & dilingkup .eap-root)",
   "scripts": {
     "dev": "next dev -p 8778",
     "build": "next build && node scripts/flatten-rsc.mjs",
     "typecheck": "tsc --noEmit",
     "i18n:check": "node scripts/i18n-check.mjs",
     "serve": "npx --yes serve@14.2.4 out -l 8778",
-    "styles": "node scripts/scope-css.mjs ../ui/assets/styles.css src/styles/eap.css",
+    "styles": "node scripts/scope-css.mjs design/styles.css src/styles/eap.css",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:report": "playwright show-report e2e/playwright-report"
   },

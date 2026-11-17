@@ -1,5 +1,5 @@
 /* =====================================================================
-   DITURUNKAN OTOMATIS dari eap/ui/assets/styles.css (mockup EAP) — jangan sunting bagian ini dengan tangan;
+   DITURUNKAN OTOMATIS dari web/design/styles.css (mockup EAP; asal eap/ui/assets/styles.css) — jangan sunting bagian ini dengan tangan;
    ubah mockup lalu jalankan ulang scripts/scope-css.mjs. Semua aturan di bawah .eap-root (tidak bocor ke Host).
    Tambahan khusus aplikasi React ada di app.css.
    ===================================================================== */

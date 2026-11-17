@@ -1,6 +1,6 @@
 'use client';
 /* Primitif tampilan bermarkup & kelas MOCKUP (eap.css): .btn, .badge, .tag, .card, .callout, .kpi, .hbar, .progress, .tabs, .field, .dl, .tbl.
-   Tidak ada gaya sendiri di sini — semua visual berasal dari eap.css (diturunkan dari eap/ui/assets/styles.css). */
+   Tidak ada gaya sendiri di sini — semua visual berasal dari eap.css (diturunkan dari web/design/styles.css). */
 import * as React from 'react';
 import { badgeClass } from '@/lib/badge';
 import { cx } from '@/lib/utils';

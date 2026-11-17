@@ -2,7 +2,7 @@
 
 Enterprise Architecture Platform — consumer data CMP (skema `set/eaw/gse/req/console/shared/ref`).
 
-> Dihasilkan otomatis dari `eap/ui/assets/app.js` (registri `WS`) pada 2026-11-16. Bila menu/layar berubah, hasilkan ulang (jangan sunting tangan agar tidak menyimpang dari registri).
+> Dihasilkan otomatis dari `eap/ui/assets/app.js` (registri `WS`; kini diarsipkan di `docs/archive/eap-ui-mockup/assets/app.js`, tag `eap-ui-mockup-final`) pada 2026-11-16. Sumber menu saat ini = `web/src/modules/registry.ts`; berkas ini SNAPSHOT historis dan tidak dibangkitkan ulang. (Teks asli: bila menu/layar berubah, hasilkan ulang; jangan sunting tangan agar tidak menyimpang dari registri).
 
 ## 1. Ringkasan hirarki
 
@@ -187,6 +187,6 @@ Organisasi, akun (idp_subject), 13 role, audit
 - `eap/migrations/` — migrasi
 - `eap/scripts/` — skrip
 - `eap/tests/` — uji
-- `eap/ui/` — prototipe UI statis (mockup)
+- `docs/archive/eap-ui-mockup/` — prototipe UI statis (mockup), DIARSIPKAN 2026-11-17 (dulu `eap/ui/`; tag `eap-ui-mockup-final`)
 
 Modul API NestJS (`eap/api/src`): `audit`, `auth`, `common`, `console`, `db`, `eaw`, `gov`, `gse`, `health`, `me`, `req`, `set`.

@@ -1,6 +1,6 @@
 'use client';
 /* Peta workspace → berkas halaman (dimuat malas per workspace). Tiap berkas modul mengekspor default { <menuId>: Komponen }.
-   Semua menu kini punya halaman; menu yang kelak belum ada di peta menampilkan halaman pengganti yang menunjuk UI lama (eap/ui) —
+   Semua menu kini punya halaman; menu yang kelak belum ada di peta menampilkan halaman pengganti yang menyatakan layar belum tersedia (UI lama eap/ui sudah diarsipkan) —
    bukan data contoh. Tambahkan menu ke berkas modulnya untuk memigrasikannya. */
 import * as React from 'react';
 import type { ComponentType } from 'react';
@@ -26,7 +26,7 @@ function makeMissing(mod: string, menu: string): ComponentType {
     return (
       <>
         <PageHd title={def?.label || t('Halaman')} />
-        <Callout tone="warn">{t('Layar ini belum dimigrasi ke antarmuka baru (eap/web). Gunakan antarmuka lama (eap/ui) untuk sementara; API dan hak aksesnya sama.')}</Callout>
+        <Callout tone="warn">{t('Layar ini belum tersedia di antarmuka EAP. API dan hak aksesnya sama.')}</Callout>
       </>
     );
   };

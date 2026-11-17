@@ -709,7 +709,7 @@ export const EN: Record<string, string> = {
   'layanan disediakan': 'services provided',
   'Layanan Enterprise': 'Enterprise Services',
   'Layanan utama': 'Main service',
-  'Layar ini belum dimigrasi ke antarmuka baru (eap/web). Gunakan antarmuka lama (eap/ui) untuk sementara; API dan hak aksesnya sama.': 'This screen has not been migrated to the new interface (eap/web) yet. Use the old interface (eap/ui) for now; the API and access rights are the same.',
+  'Layar ini belum tersedia di antarmuka EAP. API dan hak aksesnya sama.': 'This screen is not available in the EAP interface yet. The API and access rights are the same.',
   'Lengkapi entitas, nama inisiatif (≥ 3) dan business case (≥ 10 karakter).': 'Complete the entity, initiative name (≥ 3) and business case (≥ 10 characters).',
   'Lepas dari kerangka': 'Remove from framework',
   'Lepas ikatan': 'Unbind',

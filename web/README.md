@@ -1,6 +1,6 @@
 # SAORAJA EAP — Web (Next.js)
 
-SPA EAP: **Next.js (App Router) + TypeScript** mode SPA (ekspor statis), **AG Grid Community**, **TanStack Query + Zustand**, tampilan **pixel-accurate terhadap mockup `eap/ui`** (UI Rule 2026-11-16). Tersambung ke **EAP API** (`/api/v1`, dirutekan gateway per workspace). Akan menggantikan `eap/ui` (vanilla JS) secara bertahap; keduanya memakai API dan hak akses yang sama.
+SPA EAP: **Next.js (App Router) + TypeScript** mode SPA (ekspor statis), **AG Grid Community**, **TanStack Query + Zustand**, tampilan **pixel-accurate terhadap mockup** (`web/design/styles.css`; mockup HTML diarsipkan di `docs/archive/eap-ui-mockup`, tag git `eap-ui-mockup-final`) (UI Rule 2026-11-16). Tersambung ke **EAP API** (`/api/v1`, dirutekan gateway per workspace). Menggantikan UI lama `eap/ui` (vanilla JS), yang sudah diarsipkan.
 
 ## Menjalankan
 
@@ -11,31 +11,31 @@ cd eap/web && npm install
 npm run dev                          # http://localhost:8778
 npm run typecheck && npm run i18n:check && npm run build   # out/ + flatten-rsc
 npm run serve                        # sajikan out/ di :8778
-npm run styles                       # bangkitkan ulang src/styles/eap.css dari eap/ui/assets/styles.css
+npm run styles                       # bangkitkan ulang src/styles/eap.css dari web/design/styles.css
 ```
 
-Parameter URL (disimpan di sessionStorage): `?api=<url EAP API>` (kosong = same-origin lewat gateway) dan `?oidc=<issuer Keycloak>`, mis. `http://localhost:8778/?oidc=http://localhost:8180/realms/keis`. **OIDC wajib** — EAP API tidak punya login pengembangan (beda dengan CMP). Klien Keycloak `eap-spa`: daftarkan `http://localhost:8778/*` sebagai redirect URI untuk pengembangan lokal (di stack Compose, gateway `keis.localhost:8088` sudah terdaftar); API harus mengizinkan `CORS_ORIGINS=http://localhost:8778`. Akun baru **tanpa peran** sampai admin menugaskannya (Beranda menjelaskannya).
+Parameter URL (disimpan di sessionStorage; HANYA berlaku di host pengembangan `localhost`, `127.0.0.1`, `[::1]`, `*.localhost` — di host lain dibuang): `?api=<url EAP API>` (kosong = same-origin lewat gateway) dan `?oidc=<issuer Keycloak>`, mis. `http://localhost:8778/?oidc=http://localhost:8180/realms/keis`. **OIDC wajib** — EAP API tidak punya login pengembangan (beda dengan CMP). Klien Keycloak `eap-spa`: daftarkan `http://localhost:8778/*` sebagai redirect URI untuk pengembangan lokal (di stack Compose, gateway `keis.localhost:8088` sudah terdaftar); API harus mengizinkan `CORS_ORIGINS=http://localhost:8778`. Akun baru **tanpa peran** sampai admin menugaskannya (Beranda menjelaskannya).
 
 ## Tampilan = mockup (UI Rule)
 
-- `src/styles/eap.css` **DITURUNKAN OTOMATIS** dari `eap/ui/assets/styles.css` oleh `scripts/scope-css.mjs` (pola sama dengan `platform/base/web`): seluruh aturan dibungkus `.eap-root { … }` dengan CSS nesting, token tema (terang/gelap/sistem) di elemen itu. **Jangan disunting tangan** — ubah mockup lalu `npm run styles`.
+- `src/styles/eap.css` **DITURUNKAN OTOMATIS** dari `web/design/styles.css` oleh `scripts/scope-css.mjs` (pola sama dengan `platform/base/web`): seluruh aturan dibungkus `.eap-root { … }` dengan CSS nesting, token tema (terang/gelap/sistem) di elemen itu. **Jangan disunting tangan** — ubah `web/design/styles.css` lalu `npm run styles`.
 - Tidak ada reset global dan **tidak ada Tailwind/shadcn** (preflight Tailwind adalah reset global yang akan merusak Host). Markup & nama kelas = mockup (`.shell/.hdr/.nav/.page/.card/.kpi/.onb/.hbar/.tbl/.badge/.tag/.drawer/.modal/.pop/.cmdk/.toast`). Hanya `src/styles/standalone.css` (margin `html/body`) menyentuh elemen di luar `.eap-root`, dan hanya diimpor entri mandiri (`layout.tsx`); bila EAP dimuat sebagai remote di bawah Host, berkas itu tidak diimpor.
 - `src/styles/app.css` = tambahan khusus aplikasi (skeleton, kulit AG Grid yang menyamai `table.tbl`, layar masuk), juga di bawah `.eap-root`.
 - Terang/gelap dan lipat menu dipasang di `.eap-root` (`data-theme`, `nav-collapsed`), bukan di `<html>/<body>`. Font = Plus Jakarta Sans + JetBrains Mono (tag `<link>` sama dengan mockup).
 - Terukur identik dengan mockup di 1360 px: header 56 px, menu 248 px, tab workspace 107×55, tautan menu 34 px, H1 22/28 px, warna/font sama; `<body>` tidak terpengaruh (latar transparan, font bawaan).
-- **Penyimpangan dari mockup (disengaja):** lonceng notifikasi dan MIND Copilot tidak dibuat (data contoh, tanpa backend); tab "Mode Workspace"/"API Registry" di D4 dan topologi/redundansi di dashboard tidak ada (tanpa data nyata); tombol ↻ dan ⇩ CSV tambahan (ghost) di toolbar daftar; kolom "Aplikasi" di Layanan butuh relasi (belum); selector entitas di header memakai `?entityId=` pada daftar yang mendukungnya (aplikasi, objek domain, ARB).
+- **Penyimpangan dari mockup (disengaja):** lonceng notifikasi dan MIND Copilot ADA tetapi memakai backend nyata (bukan data contoh mockup); topologi, redundansi/drift, dan KPI di dashboard memakai data nyata; tab "Mode Workspace"/"API Registry" di D4 tidak ada (tanpa data nyata); tombol ↻ dan ⇩ CSV tambahan (ghost) di toolbar daftar; kolom "Aplikasi" di Layanan butuh relasi (belum); selector entitas di header memakai `?entityId=` pada daftar yang mendukungnya (aplikasi, objek domain, ARB).
 
 ## Cakupan saat ini
 
-| Workspace | Sudah di eap/web | Masih di eap/ui |
-|---|---|---|
-| EAW | Dashboard; **Framework Builder (`eaw-framework.tsx`) + Penerbit & Impor (`eaw-publisher.tsx`)**; **Roadmap (`eaw-roadmap.tsx`): KPI, Gantt, fase/butir buat-ubah-hapus + pelacak milestone**; **Lineage & Impact (`eaw-lineage.tsx`): graf + analisis dampak/dependensi, filter entitas & kedalaman**; **Kanvas ArchiMate (`eaw-canvas.tsx`): seret/hubungkan/ikat ke objek EAW, impor dari model, sinkron relasi, ekspor SVG & Exchange XML — SVG sendiri bergaya mockup, tanpa pustaka diagram**; **D1–D6 + aplikasi: daftar, buat/ubah/hapus Draf (+ pemilih KRA sedomain), relasi, transisi AF-05**; **KRA: buat/ubah/hapus Draf + pratinjau dampak AF-07 + transisi; ADR: buat/ubah (Proposed) + keputusan Accepted/Deprecated/Superseded; ARB: pra-screening, ajukan, ubah, tinjau/revisi/setujui/tolak (empat mata)** (tiga terakhir BARU 2026-11-16, belum diuji dengan data nyata); Penerbit (daftar) | Kanvas, Lineage, Framework Builder,  unduh PDF/HTML |
-| SET | **Struktur organisasi (+ atribut KAF/IKA/KRA), Akun (beri/cabut peran, aktif/nonaktif, sinkron RBAC), Roles & Permissions, API Client & Secrets, Audit Trail** | — |
+| Workspace | Tersedia di eap/web |
+|---|---|
+| EAW | Dashboard; **Framework Builder (`eaw-framework.tsx`) + Penerbit & Impor (`eaw-publisher.tsx`)**; **Roadmap (`eaw-roadmap.tsx`): KPI, Gantt, fase/butir buat-ubah-hapus + pelacak milestone**; **Lineage & Impact (`eaw-lineage.tsx`): graf + analisis dampak/dependensi, filter entitas & kedalaman**; **Kanvas ArchiMate (`eaw-canvas.tsx`): seret/hubungkan/ikat ke objek EAW, impor dari model, sinkron relasi, ekspor SVG & Exchange XML — SVG sendiri bergaya mockup, tanpa pustaka diagram**; **D1–D6 + aplikasi: daftar, buat/ubah/hapus Draf (+ pemilih KRA sedomain), relasi, transisi AF-05**; **KRA: buat/ubah/hapus Draf + pratinjau dampak AF-07 + transisi; ADR: buat/ubah (Proposed) + keputusan Accepted/Deprecated/Superseded; ARB: pra-screening, ajukan, ubah, tinjau/revisi/setujui/tolak (empat mata)** (tiga terakhir BARU 2026-11-16, belum diuji dengan data nyata); Penerbit (daftar) |
+| SET | **Struktur organisasi (+ atribut KAF/IKA/KRA), Akun (beri/cabut peran, aktif/nonaktif, sinkron RBAC), Roles & Permissions, API Client & Secrets, Audit Trail** |
 | GSE | **Proyek (wizard scaffold AF-06, drawer, bundel, push/CI), Template (buat/ubah/hapus), Flow Builder + eksekusi saga, Web IDE (Monaco + gabung 3-arah + commit)**; Status PR & pipeline (gerbang + CI Git) |
 | REQ | **Sesi Elisitasi (obrolan ter-guardrail), User Story & Gherkin, Ekspor Markdown + kirim ke GSE** |
 | CONSOLE | **IKA, AI register (admin), FinOps (+faktur), Observability, Security Center (kill-switch), EIO Control Center (konektor, model kanonikal, rute, uji mediasi, jejak)** |
 
-Menu yang belum dimigrasi tetap tampil (34 layar, id rute = `eap/ui`) dan menampilkan halaman pengganti, bukan data contoh. Tombol tulis tanpa izin tampil terkunci 🔒 (seperti `lockBtn` mockup) dan menolak dengan toast 403. Aturan sebenarnya di server/DB: izin, cakupan entitas (RLS + `eaw.can_edit`), hanya Draf, `If-Match` (412/428), constraint DB (422) — galat server tampil di modal tanpa menutupnya.
+Seluruh 34 menu sudah punya halaman di eap/web; menu yang kelak belum ada di peta menampilkan halaman pengganti, bukan data contoh. Tombol tulis tanpa izin tampil terkunci 🔒 (seperti `lockBtn` mockup) dan menolak dengan toast 403. Aturan sebenarnya di server/DB: izin, cakupan entitas (RLS + `eaw.can_edit`), hanya Draf, `If-Match` (412/428), constraint DB (422) — galat server tampil di modal tanpa menutupnya.
 
 ## Struktur
 
